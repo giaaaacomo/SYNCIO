@@ -171,13 +171,22 @@ test("returns JSON when Trakt app credentials cannot be encrypted", async () => 
 });
 
 test("protects setup routes with the setup token", async () => {
-  const response = await worker.fetch(new Request("https://syncio.example/api/setup/status"), {
-    SYNCIO_DB: new MemoryD1(),
-    SYNCIO_ENCRYPTION_KEY: TEST_KEY,
-    SYNCIO_SETUP_TOKEN: SETUP_TOKEN
-  });
-  assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), { error: "Setup authorization required." });
+  const protectedRoutes: ReadonlyArray<readonly [string, string]> = [
+    ["/api/setup/status", "GET"],
+    ["/api/setup/health", "GET"],
+    ["/api/setup/export", "GET"],
+    ["/api/setup/disconnect", "POST"],
+    ["/api/setup/data", "DELETE"]
+  ];
+  for (const [path, method] of protectedRoutes) {
+    const response = await worker.fetch(new Request(`https://syncio.example${path}`, { method }), {
+      SYNCIO_DB: new MemoryD1(),
+      SYNCIO_ENCRYPTION_KEY: TEST_KEY,
+      SYNCIO_SETUP_TOKEN: SETUP_TOKEN
+    });
+    assert.equal(response.status, 401, `${method} ${path}`);
+    assert.deepEqual(await response.json(), { error: "Setup authorization required." });
+  }
 });
 
 test("completes Trakt Device OAuth and stores only encrypted verified credentials", async () => {
