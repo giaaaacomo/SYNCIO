@@ -34,7 +34,7 @@ corepack pnpm run worker:test
 - `POST /api/setup/trakt/start`
 - `POST /api/setup/trakt/poll`
 - `POST /api/setup/stremio`
-- `GET /api/sync/preview` runs an authenticated, read-only account baseline for watched movies, watched episodes, and movie watchlist differences.
+- `GET /api/sync/preview` runs an authenticated, read-only account baseline for watched history, Library/Watchlist, and movie/series rating differences.
 - `POST /api/sync/apply` applies only an exact fingerprint in Test or activated Live mode.
 - `POST /api/sync/activate` requires Preview only mode, `ENABLE SYNCIO`, the exact fingerprint, and a successful first apply before arming Live mode.
 - `POST /api/sync/run` invokes the guarded pipeline used by the hourly cron.
@@ -47,7 +47,9 @@ Cloudflare can clone the public repository, provision D1 from the ID-free bindin
 
 The user still supplies two independent secrets during deployment and creates a user-owned Trakt app during `/configure`. SYNCIO never receives those values on maintainer-controlled infrastructure.
 
-Expected command shape:
+The Deploy to Cloudflare form reads `.dev.vars.example` and the required-secret declarations from `wrangler.jsonc`, then asks for exactly `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN`. Both can be independent random password-manager values of at least 32 characters. Base64-encoded 32-byte keys remain supported.
+
+For a terminal deployment, the equivalent command shape is:
 
 ```sh
 openssl rand -base64 32
@@ -63,11 +65,11 @@ The first value is `SYNCIO_ENCRYPTION_KEY`; the second is `SYNCIO_SETUP_TOKEN`. 
 - Cloudflare's current automatic provisioning supports D1 bindings without account-specific resource IDs.
 - D1 migrations live in `migrations/` by default and can be applied through Wrangler.
 - Wrangler can create a D1 database and print the database ID.
-- Generate `SYNCIO_ENCRYPTION_KEY` as 32 random bytes encoded as base64 or base64url, for example `openssl rand -base64 32`.
+- Generate `SYNCIO_ENCRYPTION_KEY` as either 32 random bytes encoded as base64/base64url or an independent random password-manager value of at least 32 characters.
 - Generate an independent high-entropy `SYNCIO_SETUP_TOKEN`, for example with `openssl rand -base64 48`. Do not reuse the encryption key.
 - Trakt's current Device OAuth token endpoint requires both the app client id and client secret.
 - Stremio account writes rely on Stremio's internal account API, not the public Addon SDK contract. Account identity is verified before an auth key is accepted.
-- The free Workers plan currently allows 50 external subrequests per invocation. Cinemeta lookups are batched, episode history follows bounded pagination, ratings scan one page at a time, and the sync interval is one hour.
+- The free Workers plan currently allows 50 external subrequests per invocation. Cinemeta lookups and Stremio rating checks are batched, Trakt collections use bounded pagination, and the sync interval is one hour.
 - Each run applies at most 250 logical differences. Ledger entries are inserted in grouped D1 queries to keep first imports within free-tier query limits.
 - Read [SELF_HOST_ONBOARDING.md](SELF_HOST_ONBOARDING.md) for the intended setup flow and privacy boundary.
 

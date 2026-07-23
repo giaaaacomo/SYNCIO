@@ -43,15 +43,24 @@ function parseEncryptedSecret(value: string): { iv: Uint8Array; cipherText: Uint
 }
 
 async function importAesKey(keyMaterial: string): Promise<CryptoKey> {
-  const raw = decodeKeyMaterial(keyMaterial);
-  if (raw.byteLength !== 32) throw new Error("SYNCIO_ENCRYPTION_KEY must decode to 32 bytes.");
+  const raw = await decodeKeyMaterial(keyMaterial);
   return crypto.subtle.importKey("raw", arrayBuffer(raw), "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
-function decodeKeyMaterial(value: string): Uint8Array {
+async function decodeKeyMaterial(value: string): Promise<Uint8Array> {
   const normalized = value.trim();
   if (normalized.length === 0) throw new Error("SYNCIO_ENCRYPTION_KEY is empty.");
-  return base64UrlDecode(normalized);
+  try {
+    const decoded = base64UrlDecode(normalized);
+    if (decoded.byteLength === 32) return decoded;
+  } catch {
+    // A password-manager value is derived below instead of treated as Base64.
+  }
+  const passphrase = encode(normalized);
+  if (passphrase.byteLength < 32) {
+    throw new Error("SYNCIO_ENCRYPTION_KEY must be a 32-byte Base64 key or at least 32 characters.");
+  }
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", arrayBuffer(passphrase)));
 }
 
 function encode(value: string): Uint8Array {

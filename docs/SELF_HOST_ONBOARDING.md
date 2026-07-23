@@ -4,14 +4,14 @@ SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
 
 Each user deploys their own Cloudflare Worker + D1 database and creates their own Trakt application. SYNCIO code guides the setup, but the runtime that processes tokens and sync state belongs to the user.
 
-Version 0.1.0 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
+Version 0.1.1 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
 
 ## Intended User Flow
 
 1. Open the SYNCIO deploy/setup page from the repository.
 2. Authorize the Deploy to Cloudflare flow against the user's Cloudflare and Git provider accounts.
 3. Choose the Worker, repository, and automatically provisioned D1 names.
-4. Generate independent `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values and enter both as Worker secrets.
+4. Generate independent random `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values of at least 32 characters with a password manager and enter both as Worker secrets.
 5. Let Cloudflare clone the repository, apply migrations, and deploy the Worker.
 6. Open the deployed `/configure` page.
 7. Create a Trakt application at `https://trakt.tv/oauth/applications/new`. The legacy application-list URL may return `404` in the current Trakt UI.
@@ -63,7 +63,7 @@ The user's Trakt account controls API authorization, and the user's Cloudflare a
 The realistic target is not literally zero clicks because Cloudflare and Trakt both require user-owned authorization. The target is guided one-click per external action:
 
 - one deploy button for repository cloning, D1 provisioning, migrations, and Worker creation;
-- two locally generated secrets entered directly into the user's Cloudflare deployment;
+- two independent password-manager values entered directly into the user's Cloudflare deployment;
 - one Trakt app creation link with copyable callback/redirect values;
 - one encrypted Trakt app credential save;
 - one Device OAuth approval;

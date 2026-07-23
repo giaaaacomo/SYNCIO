@@ -13,7 +13,9 @@
   },
   "d1_databases": [
     {
-      "binding": "SYNCIO_DB"
+      "binding": "SYNCIO_DB",
+      "database_name": "syncio",
+      "database_id": ""
     }
   ],
   "secrets": {

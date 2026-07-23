@@ -6,7 +6,19 @@
 SYNCIO is a self-hosted TypeScript project for deep Stremio <-> Trakt synchronization. Each installation runs in the user's own Cloudflare account and stores its encrypted credentials and sync state in its own D1 database.
 
 > [!IMPORTANT]
-> Version 0.1.0 is a technical preview. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. Removals are intentionally unsupported.
+> Version 0.1.1 is a technical preview. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. Removals are intentionally unsupported.
+
+## Quick Self-Hosted Deploy
+
+1. Open the **Deploy to Cloudflare** button above and authorize Cloudflare to create a personal fork, Worker, and D1 database.
+2. In the deployment form, generate two independent random values of at least 32 characters with a password manager:
+   - `SYNCIO_ENCRYPTION_KEY` encrypts account credentials stored in D1.
+   - `SYNCIO_SETUP_TOKEN` unlocks the configure page and protected sync APIs.
+3. Keep both values in the password manager and let Cloudflare deploy. The repository deploy command applies all D1 migrations automatically.
+4. Open the Worker URL, enter the setup token, and complete the guided Trakt and Stremio linking.
+5. Run a read-only preview, install the displayed Stremio manifest, and activate hourly synchronization only after reviewing the exact changes.
+
+The Cloudflare account, fork, Worker, D1 database, secrets, and account tokens belong only to the user. SYNCIO has no maintainer-operated backend. See [the full self-host onboarding guide](docs/SELF_HOST_ONBOARDING.md) for recovery and privacy details.
 
 This repository started with **Milestone 0** research probes that verify undocumented or weakly documented behavior. It now contains a self-hosted Cloudflare Worker with guarded watched reconciliation, rating mapping, additive Library/Watchlist synchronization, D1 state, and hourly scheduling.
 

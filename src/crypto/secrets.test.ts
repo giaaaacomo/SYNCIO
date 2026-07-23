@@ -19,3 +19,18 @@ test("rejects decryption with the wrong context", async () => {
 
   await assert.rejects(() => decryptSecret(encrypted.value, TEST_KEY, "user_2:trakt-refresh"));
 });
+
+test("derives a stable AES key from a password-manager value", async () => {
+  const key = "independent-random-encryption-key-48-characters-long";
+  const encrypted = await encryptSecret("stremio-auth", key, "user_1:stremio-auth");
+
+  assert.equal(await decryptSecret(encrypted.value, key, "user_1:stremio-auth"), "stremio-auth");
+  await assert.rejects(() => decryptSecret(encrypted.value, `${key}-different`, "user_1:stremio-auth"));
+});
+
+test("rejects short encryption values", async () => {
+  await assert.rejects(
+    () => encryptSecret("secret", "too-short", "user_1:test"),
+    /32-byte Base64 key or at least 32 characters/
+  );
+});
