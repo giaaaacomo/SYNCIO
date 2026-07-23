@@ -14,7 +14,7 @@ Version 0.1.1 is a technical preview. Begin with isolated test accounts and insp
 4. Generate independent random `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values of at least 32 characters with a password manager and enter both as Worker secrets.
 5. Let Cloudflare clone the repository, apply migrations, and deploy the Worker.
 6. Open the deployed `/configure` page.
-7. Create a Trakt application at `https://trakt.tv/oauth/applications/new`. The legacy application-list URL may return `404` in the current Trakt UI.
+7. Create a Trakt application at `https://app.trakt.tv/settings/apps/api/new`.
 8. Paste the Trakt app client id and client secret.
 9. Link Trakt with Device OAuth.
 10. Link Stremio.

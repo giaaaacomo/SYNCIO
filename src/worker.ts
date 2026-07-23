@@ -768,7 +768,7 @@ function configurePage(origin: string): string {
     <section class="panel protected hidden">
       <h2>Trakt App</h2>
       <p>Create your own Trakt application, then save its credentials here. Values are encrypted before they are stored in your D1 database.</p>
-      <p><a href="https://trakt.tv/oauth/applications/new" target="_blank" rel="noreferrer">Create Trakt API app</a></p>
+      <p><a href="https://app.trakt.tv/settings/apps/api/new" target="_blank" rel="noreferrer">Create Trakt API app</a></p>
       <form id="trakt-app-form">
         <label>
           Client ID

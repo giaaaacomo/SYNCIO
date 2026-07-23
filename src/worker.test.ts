@@ -23,6 +23,15 @@ test("serves an installable manifest without catalog rows", async () => {
   assert.equal(body.behaviorHints?.configurationUrl, "https://syncio.example/configure");
 });
 
+test("links configure onboarding to the current Trakt app creation page", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(body, /https:\/\/app\.trakt\.tv\/settings\/apps\/api\/new/);
+  assert.doesNotMatch(body, /trakt\.tv\/oauth\/applications/);
+});
+
 test("reports redacted setup status for a self-host install", async () => {
   const db = new MemoryD1();
   const response = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/status"), {

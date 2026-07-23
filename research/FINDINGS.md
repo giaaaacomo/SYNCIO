@@ -259,7 +259,7 @@ Status: live probes started on 2026-07-17 with a dedicated Stremio/Trakt test ac
 - BLOCKED: the Stremio-stored Trakt access token alone is not enough for direct Trakt API calls.
 - Observed direct call to Trakt with only `Authorization: Bearer ...` returns HTTP 403.
 - Need `TRAKT_CLIENT_ID` from a Trakt application for official Trakt API probes.
-- Current Trakt docs point app credential management to `https://trakt.tv/oauth/applications`, but that list route may return `404`; the direct creation route `https://trakt.tv/oauth/applications/new` remains available.
+- Trakt's current app creation page is `https://app.trakt.tv/settings/apps/api/new`; the old `trakt.tv/oauth/applications` routes may return `404`.
 - PASS: the deployed Worker linked the isolated Trakt and Stremio test accounts with encrypted D1 credentials and verified both identities before previewing.
 - Fixed the Worker episode baseline to use `/sync/history/episodes` instead of assuming `/sync/watched/shows` contains complete season details; the deployed preview now matches the local probe at 41 episode-history events.
 - Current remote read-only baseline plans 40 Trakt-to-Stremio operations: one visible movie-library addition and 39 episode watched markers, with no Stremio-to-Trakt writes.
