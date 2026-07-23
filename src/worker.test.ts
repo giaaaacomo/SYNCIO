@@ -6,6 +6,23 @@ import type { D1DatabaseLike } from "./storage/d1.js";
 const TEST_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY";
 const SETUP_TOKEN = "test-setup-token";
 
+test("serves an installable manifest without catalog rows", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/manifest.json"), {});
+  const body = await response.json() as {
+    resources?: unknown[];
+    types?: unknown[];
+    catalogs?: unknown[];
+    behaviorHints?: { configurationUrl?: string };
+  };
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(body.resources, []);
+  assert.deepEqual(body.types, []);
+  assert.deepEqual(body.catalogs, []);
+  assert.equal(body.behaviorHints?.configurationUrl, "https://syncio.example/configure");
+});
+
 test("reports redacted setup status for a self-host install", async () => {
   const db = new MemoryD1();
   const response = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/status"), {

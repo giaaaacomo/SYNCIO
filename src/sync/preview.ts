@@ -7,9 +7,9 @@ import {
   getStremioLibrary,
   traktGet,
   traktGetAllPages,
-  traktGetPage,
   type CinemetaVideoSet,
-  type StremioLibraryItem
+  type StremioLibraryItem,
+  type StremioRatingStatus
 } from "./api-clients.js";
 import { loadSyncCredentials } from "./credentials.js";
 import { getHostedSyncSettings } from "../storage/repositories/users.js";
@@ -18,7 +18,7 @@ import { decodeWatchedField } from "./watched-bitfield.js";
 
 export interface BaselineOperation {
   direction: "trakt-to-stremio" | "stremio-to-trakt";
-  kind: "watched-movie" | "watched-episode" | "watchlist-movie" | "watchlist-series" | "rating-movie";
+  kind: "watched-movie" | "watched-episode" | "watchlist-movie" | "watchlist-series" | "rating-movie" | "rating-series";
   imdb: string;
   title: string | null;
   season?: number;
@@ -27,9 +27,8 @@ export interface BaselineOperation {
   ratingStatus?: "liked" | "loved" | null;
 }
 
-const RATING_CURSOR_KEY = "ratings-movies";
+const RATING_CURSOR_KEY = "ratings-known-items";
 const RATING_BATCH_SIZE = 10;
-const RATING_PAGE_SIZE = 100;
 export const MAX_OPERATIONS_PER_RUN = 250;
 
 export async function previewWorkerSync(input: {
@@ -58,7 +57,8 @@ export async function previewWorkerSync(input: {
     watchedMovies,
     watchedShows,
     watchedEpisodeHistoryPage,
-    initialRatedMoviesPage,
+    ratedMoviePages,
+    ratedShowPages,
     watchlistMoviePages,
     watchlistShowPages
   ] = await Promise.all([
@@ -81,15 +81,25 @@ export async function previewWorkerSync(input: {
       )
       : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 }),
     settings.ratingSyncEnabled
-      ? traktGetPage(
-        "/sync/ratings/movies",
+      ? traktGetAllPages(
+        "/users/me/ratings/movies",
         credentials.trakt.clientId,
         credentials.trakt.accessToken,
         input.fetcher,
         input.traktApiBase,
-        { page: Math.floor(ratingCursor / RATING_PAGE_SIZE) + 1, limit: RATING_PAGE_SIZE }
+        { limit: 250, maxPages: 10 }
       )
-      : Promise.resolve({ items: [], page: 1, pageCount: 1, itemCount: 0 }),
+      : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 }),
+    settings.ratingSyncEnabled
+      ? traktGetAllPages(
+        "/users/me/ratings/shows",
+        credentials.trakt.clientId,
+        credentials.trakt.accessToken,
+        input.fetcher,
+        input.traktApiBase,
+        { limit: 250, maxPages: 10 }
+      )
+      : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 }),
     settings.libraryWatchlistEnabled
       ? traktGetAllPages(
         "/sync/watchlist/movies",
@@ -113,19 +123,6 @@ export async function previewWorkerSync(input: {
   if (traktIdentity.username !== credentials.trakt.username) throw new Error("Trakt account guard failed during preview.");
 
   const watchedEpisodeHistory = watchedEpisodeHistoryPage.items;
-  let ratedMoviesPage = initialRatedMoviesPage;
-  const normalizedRatingOffset = ratedMoviesPage.itemCount > 0 ? ratingCursor % ratedMoviesPage.itemCount : 0;
-  const normalizedRatingPage = Math.floor(normalizedRatingOffset / RATING_PAGE_SIZE) + 1;
-  if (settings.ratingSyncEnabled && normalizedRatingPage !== ratedMoviesPage.page) {
-    ratedMoviesPage = await traktGetPage(
-      "/sync/ratings/movies",
-      credentials.trakt.clientId,
-      credentials.trakt.accessToken,
-      input.fetcher,
-      input.traktApiBase,
-      { page: normalizedRatingPage, limit: RATING_PAGE_SIZE }
-    );
-  }
   const showIds = new Set([
     ...inputShowImdbIds(watchedShows),
     ...inputEpisodeHistoryShowImdbIds(watchedEpisodeHistory),
@@ -142,12 +139,12 @@ export async function previewWorkerSync(input: {
     videoSets
   });
   const ratingPlan = settings.ratingSyncEnabled
-    ? await ratingOperations(
+    ? await buildRatingOperations(
       credentials.stremio.authKey,
-      ratedMoviesPage.items,
+      library,
+      ratedMoviePages.items,
+      ratedShowPages.items,
       ratingCursor,
-      (ratedMoviesPage.page - 1) * RATING_PAGE_SIZE,
-      ratedMoviesPage.itemCount,
       settings.likeThreshold,
       settings.loveThreshold,
       input.fetcher,
@@ -172,9 +169,11 @@ export async function previewWorkerSync(input: {
       traktEpisodeHistoryEvents: arrayValue(watchedEpisodeHistory).length,
       traktEpisodeHistoryPages: watchedEpisodeHistoryPage.pagesFetched,
       traktEpisodeHistoryTotal: watchedEpisodeHistoryPage.itemCount,
-      traktRatedMovies: ratedMoviesPage.itemCount,
-      traktRatedMoviesPage: ratedMoviesPage.page,
-      traktRatedMoviesChecked: ratingPlan.checked,
+      traktRatedMovies: ratedMoviePages.itemCount,
+      traktRatedMoviePages: ratedMoviePages.pagesFetched,
+      traktRatedShows: ratedShowPages.itemCount,
+      traktRatedShowPages: ratedShowPages.pagesFetched,
+      stremioRatingCandidatesChecked: ratingPlan.checked,
       traktWatchlistMovies: watchlistMoviePages.itemCount,
       traktWatchlistMoviePages: watchlistMoviePages.pagesFetched,
       traktWatchlistShows: watchlistShowPages.itemCount,
@@ -195,7 +194,13 @@ export async function previewWorkerSync(input: {
       total: ratingPlan.total,
       nextOffset: ratingPlan.nextOffset
     },
-    pendingCoverage: []
+    pendingCoverage: ratingPlan.nextOffset !== 0
+      ? [{
+        feature: "stremio-ratings",
+        strategy: "known-library-item-sweep",
+        remainingInCycle: ratingPlan.total - ratingPlan.nextOffset
+      }]
+      : []
   };
 }
 
@@ -206,12 +211,12 @@ export function operationBatch(
   return [...ratingOperations, ...baseline].slice(0, MAX_OPERATIONS_PER_RUN);
 }
 
-async function ratingOperations(
+export async function buildRatingOperations(
   authKey: string,
+  library: StremioLibraryItem[],
   ratedMovies: unknown,
+  ratedShows: unknown,
   rawOffset: number,
-  pageStart: number,
-  totalRatings: number,
   likeThreshold: number,
   loveThreshold: number,
   fetcher: typeof fetch,
@@ -223,33 +228,99 @@ async function ratingOperations(
   total: number;
   nextOffset: number;
 }> {
-  const pageRatings = arrayValue(ratedMovies);
-  const offset = totalRatings > 0 ? rawOffset % totalRatings : 0;
-  const localOffset = Math.max(0, offset - pageStart);
-  const batch = pageRatings.slice(localOffset, localOffset + RATING_BATCH_SIZE);
-  if (totalRatings > offset && batch.length === 0) {
-    throw new Error("Trakt ratings pagination returned an empty page before the declared end.");
+  const traktRatings = new Map<string, {
+    mediaType: "movie" | "series";
+    title: string | null;
+    rating: number;
+  }>();
+  addTraktRatings(traktRatings, ratedMovies, "movie");
+  addTraktRatings(traktRatings, ratedShows, "series");
+
+  const candidates = new Map<string, {
+    imdb: string;
+    mediaType: "movie" | "series";
+    title: string | null;
+  }>();
+  for (const item of library) {
+    if (!isImdbId(item._id) || (item.type !== "movie" && item.type !== "series")) continue;
+    candidates.set(ratingKey(item.type, item._id), {
+      imdb: item._id,
+      mediaType: item.type,
+      title: stringOrNull(item.name)
+    });
   }
+  for (const [key, item] of traktRatings) {
+    if (!candidates.has(key)) candidates.set(key, {
+      imdb: key.slice(key.indexOf(":") + 1),
+      mediaType: item.mediaType,
+      title: item.title
+    });
+  }
+
+  const knownItems = Array.from(candidates.values()).sort((left, right) =>
+    ratingKey(left.mediaType, left.imdb).localeCompare(ratingKey(right.mediaType, right.imdb))
+  );
+  const totalRatings = knownItems.length;
+  const offset = totalRatings > 0 ? rawOffset % totalRatings : 0;
+  const batch = knownItems.slice(offset, offset + RATING_BATCH_SIZE);
   const operations: BaselineOperation[] = [];
-  for (const itemValue of batch) {
-    const item = recordValue(itemValue);
-    const movie = recordValue(item.movie);
-    const ids = recordValue(movie.ids);
-    if (typeof ids.imdb !== "string" || typeof item.rating !== "number") continue;
-    const target = mapTraktRating(item.rating, likeThreshold, loveThreshold);
-    const current = await getStremioRatingStatus(authKey, ids.imdb, "movie", fetcher, likesBase);
-    if (current === target) continue;
-    operations.push({
-      direction: "trakt-to-stremio",
-      kind: "rating-movie",
-      imdb: ids.imdb,
-      title: stringOrNull(movie.title),
-      traktRating: item.rating,
-      ratingStatus: target
+  for (const candidate of batch) {
+    const current = await getStremioRatingStatus(
+      authKey,
+      candidate.imdb,
+      candidate.mediaType,
+      fetcher,
+      likesBase
+    );
+    const trakt = traktRatings.get(ratingKey(candidate.mediaType, candidate.imdb));
+    const kind = candidate.mediaType === "movie" ? "rating-movie" : "rating-series";
+    if (trakt) {
+      const target = mapTraktRating(trakt.rating, likeThreshold, loveThreshold);
+      if (current !== target) operations.push({
+        direction: "trakt-to-stremio",
+        kind,
+        imdb: candidate.imdb,
+        title: trakt.title ?? candidate.title,
+        traktRating: trakt.rating,
+        ratingStatus: target
+      });
+      continue;
+    }
+    const traktRating = mapStremioRating(current, likeThreshold, loveThreshold);
+    if (traktRating !== null) operations.push({
+      direction: "stremio-to-trakt",
+      kind,
+      imdb: candidate.imdb,
+      title: candidate.title,
+      traktRating,
+      ratingStatus: current === "liked" || current === "loved" ? current : null
     });
   }
   const nextOffset = offset + batch.length >= totalRatings ? 0 : offset + batch.length;
   return { operations, offset, checked: batch.length, total: totalRatings, nextOffset };
+}
+
+function addTraktRatings(
+  output: Map<string, { mediaType: "movie" | "series"; title: string | null; rating: number }>,
+  value: unknown,
+  mediaType: "movie" | "series"
+): void {
+  const field = mediaType === "movie" ? "movie" : "show";
+  for (const itemValue of arrayValue(value)) {
+    const item = recordValue(itemValue);
+    const media = recordValue(item[field]);
+    const ids = recordValue(media.ids);
+    if (typeof ids.imdb !== "string" || typeof item.rating !== "number") continue;
+    output.set(ratingKey(mediaType, ids.imdb), {
+      mediaType,
+      title: stringOrNull(media.title),
+      rating: item.rating
+    });
+  }
+}
+
+function ratingKey(mediaType: "movie" | "series", imdb: string): string {
+  return `${mediaType}:${imdb}`;
 }
 
 export function mapTraktRating(
@@ -259,6 +330,16 @@ export function mapTraktRating(
 ): "liked" | "loved" | null {
   if (rating >= loveThreshold) return "loved";
   if (rating >= likeThreshold) return "liked";
+  return null;
+}
+
+export function mapStremioRating(
+  status: StremioRatingStatus,
+  likeThreshold = 7,
+  loveThreshold = 9
+): number | null {
+  if (status === "loved") return loveThreshold;
+  if (status === "liked") return likeThreshold;
   return null;
 }
 

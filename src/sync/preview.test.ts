@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBaselinePlan, mapTraktRating, MAX_OPERATIONS_PER_RUN, operationBatch } from "./preview.js";
+import {
+  buildBaselinePlan,
+  buildRatingOperations,
+  mapStremioRating,
+  mapTraktRating,
+  MAX_OPERATIONS_PER_RUN,
+  operationBatch
+} from "./preview.js";
 import { encodeWatchedField } from "./watched-bitfield.js";
 
 test("plans movie history and additive Library/Watchlist sync in both directions", async () => {
@@ -78,6 +85,71 @@ test("maps Trakt ratings using the configured thresholds", () => {
   assert.equal(mapTraktRating(8), "liked");
   assert.equal(mapTraktRating(9), "loved");
   assert.equal(mapTraktRating(10), "loved");
+});
+
+test("maps Stremio Like and Love to the configured Trakt ratings", () => {
+  assert.equal(mapStremioRating(null), null);
+  assert.equal(mapStremioRating("watched"), null);
+  assert.equal(mapStremioRating("liked"), 7);
+  assert.equal(mapStremioRating("loved"), 9);
+  assert.equal(mapStremioRating("liked", 6, 10), 6);
+});
+
+test("plans ratings in both directions and keeps existing Trakt ratings authoritative", async () => {
+  const statuses = new Map([
+    ["movie:tt0000001", "loved"],
+    ["movie:tt0000002", "liked"],
+    ["series:tt0000003", "liked"]
+  ]);
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    const key = `${url.searchParams.get("mediaType")}:${url.searchParams.get("mediaId")}`;
+    return Response.json({ status: statuses.get(key) ?? null });
+  };
+  const plan = await buildRatingOperations(
+    "auth",
+    [
+      { _id: "tt0000001", name: "Stremio only", type: "movie" },
+      { _id: "tt0000002", name: "Trakt wins", type: "movie" },
+      { _id: "tt0000003", name: "Series from Stremio", type: "series" }
+    ],
+    [{ rating: 9, movie: { title: "Trakt wins", ids: { imdb: "tt0000002" } } }],
+    [],
+    0,
+    7,
+    9,
+    fetcher,
+    "https://likes.example/api"
+  );
+
+  assert.deepEqual(plan.operations, [
+    {
+      direction: "stremio-to-trakt",
+      kind: "rating-movie",
+      imdb: "tt0000001",
+      title: "Stremio only",
+      traktRating: 9,
+      ratingStatus: "loved"
+    },
+    {
+      direction: "trakt-to-stremio",
+      kind: "rating-movie",
+      imdb: "tt0000002",
+      title: "Trakt wins",
+      traktRating: 9,
+      ratingStatus: "loved"
+    },
+    {
+      direction: "stremio-to-trakt",
+      kind: "rating-series",
+      imdb: "tt0000003",
+      title: "Series from Stremio",
+      traktRating: 7,
+      ratingStatus: "liked"
+    }
+  ]);
+  assert.equal(plan.checked, 3);
+  assert.equal(plan.nextOffset, 0);
 });
 
 test("caps each account run to a bounded operation batch", () => {

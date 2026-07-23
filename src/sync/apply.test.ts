@@ -4,6 +4,7 @@ import {
   activateWorkerSync,
   applyWorkerSync,
   buildTraktHistoryPayload,
+  buildTraktRatingsPayload,
   buildTraktWatchlistPayload
 } from "./apply.js";
 import type { D1DatabaseLike } from "../storage/d1.js";
@@ -63,6 +64,37 @@ test("groups visible Stremio Library items into a Trakt watchlist payload", () =
   assert.deepEqual(payload, {
     movies: [{ ids: { imdb: "tt-movie" } }],
     shows: [{ ids: { imdb: "tt-show" } }]
+  });
+});
+
+test("groups Stremio movie and series ratings into a Trakt ratings payload", () => {
+  const payload = buildTraktRatingsPayload([
+    {
+      direction: "stremio-to-trakt",
+      kind: "rating-movie",
+      imdb: "tt-movie",
+      title: "Movie",
+      traktRating: 9
+    },
+    {
+      direction: "stremio-to-trakt",
+      kind: "rating-series",
+      imdb: "tt-show",
+      title: "Show",
+      traktRating: 7
+    },
+    {
+      direction: "trakt-to-stremio",
+      kind: "rating-movie",
+      imdb: "tt-other",
+      title: "Other",
+      traktRating: 10
+    }
+  ]);
+
+  assert.deepEqual(payload, {
+    movies: [{ ids: { imdb: "tt-movie" }, rating: 9 }],
+    shows: [{ ids: { imdb: "tt-show" }, rating: 7 }]
   });
 });
 

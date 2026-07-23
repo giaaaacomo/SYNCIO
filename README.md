@@ -87,7 +87,7 @@ By default it serves:
 
 For local testing, paste the manifest URL into Stremio's add-on repository field. Some desktop builds rewrite `stremio://` shortcut links for localhost and may drop the port.
 
-The shell currently exposes a single `SYNCIO Status` catalog item to verify the Stremio addon shape while account linking and self-hosted sync are being built.
+The production Worker manifest intentionally declares no catalogs or content resources, so installing SYNCIO does not add rows to Stremio's Home or Board. The configure page remains available through the addon's Configure action.
 
 The configure page also has a local Trakt Device OAuth flow:
 
@@ -118,7 +118,7 @@ Watched, ratings, and watchlist now use importable core modules directly from th
 
 ## Self-Hosted Cloudflare Shell
 
-The self-hosted Worker lives in `src/`. It serves the addon manifest, protected configure flow, status catalog, health/status endpoints, sync APIs, and the guarded hourly scheduler.
+The self-hosted Worker lives in `src/`. It serves the no-catalog addon manifest, protected configure flow, health/status endpoints, sync APIs, and the guarded hourly scheduler.
 
 ```sh
 corepack pnpm run worker:typecheck
@@ -131,7 +131,7 @@ The Worker has a small typed D1 adapter in `src/storage/d1.ts`. `/status.json` a
 
 Production is self-hosted: every user deploys their own Worker/D1 and creates their own Trakt application during onboarding. There is no shared production Trakt app and no hosted-by-us sync service planned.
 
-The Worker engine supports identity-checked previews, fingerprint-confirmed bidirectional watched applies, additive bidirectional Stremio Library/Trakt Watchlist synchronization for IMDb movies and series, paged Trakt-to-Stremio rating mapping, a D1 change ledger, persisted run status, and an hourly guarded scheduler. Library/Watchlist removals remain intentionally disabled. Runs are limited to 250 deterministic operations and continue converging on later hours when a backlog remains.
+The Worker engine supports identity-checked previews, fingerprint-confirmed bidirectional watched applies, additive bidirectional Stremio Library/Trakt Watchlist synchronization for IMDb movies and series, and bidirectional movie/series rating mapping. Trakt ratings are authoritative when both services already have a different value; a Stremio Like or Love fills a missing Trakt rating using the configured thresholds. Because Stremio exposes no verified bulk Like/Love listing, SYNCIO checks known Library/history items in bounded rotating batches. The engine also maintains a D1 change ledger, persisted cursors and run status, and an hourly guarded scheduler. Library/Watchlist removals remain intentionally disabled. Runs are limited to 250 deterministic operations and continue converging on later hours when a backlog remains.
 
 Trakt `429` responses preserve the server-provided `Retry-After` delay. The configure page pauses preview retries and shows the remaining cooldown instead of repeatedly calling the API.
 

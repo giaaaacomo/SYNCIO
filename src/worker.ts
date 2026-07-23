@@ -200,7 +200,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
   }
 
   if (url.pathname === "/manifest.json") {
-    return json(manifest(origin));
+    return json(manifest(origin), 200, { "cache-control": "no-store" });
   }
 
   if (url.pathname === "/healthz") {
@@ -251,24 +251,6 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
     } catch (error) {
       return syncErrorResponse(error, "Sync preview failed.", 500);
     }
-  }
-
-  if (url.pathname === "/catalog/movie/syncio-status.json") {
-    return json({
-      metas: [
-        {
-          id: "syncio:status",
-          type: "movie",
-          name: "SYNCIO Status",
-          poster: `${origin}/status-poster.svg`,
-          description: "Self-hosted SYNCIO shell is reachable."
-        }
-      ]
-    });
-  }
-
-  if (url.pathname === "/status-poster.svg") {
-    return svg(statusPoster());
   }
 
   return text("Not found", 404);
@@ -868,7 +850,7 @@ function configurePage(origin: string): string {
       <button id="sync-preview" type="button">Run Read-only Preview</button>
       <button id="sync-apply" class="hidden" type="button">Apply Preview</button>
       <div id="live-activation" class="hidden">
-        <label>Live confirmation <input id="live-confirmation" autocomplete="off" placeholder="ENABLE SYNCIO"></label>
+        <label>One-time hourly-write confirmation <input id="live-confirmation" autocomplete="off" placeholder="ENABLE SYNCIO"></label>
         <button id="sync-activate" type="button">Activate Live Sync</button>
       </div>
       <p id="sync-preview-result" class="result muted"></p>
@@ -1202,17 +1184,6 @@ function configurePage(origin: string): string {
 </html>`;
 }
 
-function statusPoster(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450">
-  <rect width="300" height="450" fill="#101418"/>
-  <rect x="24" y="24" width="252" height="402" rx="18" fill="#17202a" stroke="#2dd4bf" stroke-width="6"/>
-  <text x="150" y="184" text-anchor="middle" fill="#eef2f5" font-family="Arial, sans-serif" font-size="44" font-weight="700">SYNCIO</text>
-  <text x="150" y="238" text-anchor="middle" fill="#7dd3fc" font-family="Arial, sans-serif" font-size="20">Self-hosted shell</text>
-  <circle cx="150" cy="310" r="44" fill="#0f766e"/>
-  <text x="150" y="324" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="54" font-weight="700">+</text>
-</svg>`;
-}
-
 function html(body: string, status = 200): Response {
   return new Response(body, {
     status,
@@ -1220,20 +1191,14 @@ function html(body: string, status = 200): Response {
   });
 }
 
-function json(value: unknown, status = 200): Response {
+function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(`${JSON.stringify(value, null, 2)}\n`, {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      ...CORS_HEADERS
+      ...CORS_HEADERS,
+      ...headers
     }
-  });
-}
-
-function svg(body: string, status = 200): Response {
-  return new Response(body, {
-    status,
-    headers: { "content-type": "image/svg+xml; charset=utf-8" }
   });
 }
 

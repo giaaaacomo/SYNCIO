@@ -317,6 +317,8 @@ Status: live probes started on 2026-07-17 with a dedicated Stremio/Trakt test ac
 ## Open Questions
 
 - Can all target Stremio clients install a manifest with empty `resources`, `types`, and `catalogs`?
+- The hosted Worker now serves that minimal no-catalog manifest. Reinstall it on the test client before promoting this change; installation compatibility remains a client-level validation.
+- Stremio-originated rating discovery uses a rotating sweep over known IMDb movie/series `libraryItem` records because no bulk Like/Love endpoint has been confirmed. Existing Trakt ratings are authoritative on conflicts; Stremio Like/Love only fill missing Trakt ratings.
 - Does `removed=true` and `temp=true` reliably prevent visible Library/Home rows while preserving native watched state?
 - Is there any supported Stremio bulk source for all Like/Love states?
 - Which Trakt test data should we deliberately seed next for one movie, one episode, ratings, watchlist, and favorites?

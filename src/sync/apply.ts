@@ -100,8 +100,12 @@ async function applyWorkerSyncForScopes(
 
   const toStremio = operations.filter((item) => item.direction === "trakt-to-stremio");
   const toTrakt = operations.filter((item) => item.direction === "stremio-to-trakt");
-  const ratingOperations = toStremio.filter((item) => item.kind === "rating-movie");
-  const libraryOperations = toStremio.filter((item) => item.kind !== "rating-movie");
+  const ratingOperations = toStremio.filter((item) =>
+    item.kind === "rating-movie" || item.kind === "rating-series"
+  );
+  const libraryOperations = toStremio.filter((item) =>
+    item.kind !== "rating-movie" && item.kind !== "rating-series"
+  );
   let stremioChanges = 0;
   if (libraryOperations.length > 0) {
     const library = await getStremioLibrary(credentials.stremio.authKey, input.fetcher, input.stremioApiBase);
@@ -121,7 +125,7 @@ async function applyWorkerSyncForScopes(
       await sendStremioRatingStatus(
         credentials.stremio.authKey,
         operation.imdb,
-        "movie",
+        operation.kind === "rating-series" ? "series" : "movie",
         operation.ratingStatus ?? null,
         input.fetcher,
         input.stremioLikesBase
@@ -135,6 +139,9 @@ async function applyWorkerSyncForScopes(
   );
   const watchlistOperations = toTrakt.filter((item) =>
     item.kind === "watchlist-movie" || item.kind === "watchlist-series"
+  );
+  const traktRatingOperations = toTrakt.filter((item) =>
+    item.kind === "rating-movie" || item.kind === "rating-series"
   );
   if (historyOperations.length > 0) {
     await traktPost(
@@ -158,6 +165,17 @@ async function applyWorkerSyncForScopes(
     );
     await recordOperations(input.db, input.userId, watchlistOperations);
   }
+  if (traktRatingOperations.length > 0) {
+    await traktPost(
+      "/sync/ratings",
+      buildTraktRatingsPayload(traktRatingOperations),
+      credentials.trakt.clientId,
+      credentials.trakt.accessToken,
+      input.fetcher,
+      input.traktApiBase
+    );
+    await recordOperations(input.db, input.userId, traktRatingOperations);
+  }
   await setSyncCursor(input.db, input.userId, ratingCursor.key, ratingCursor.nextOffset);
   return {
     ok: true,
@@ -168,6 +186,7 @@ async function applyWorkerSyncForScopes(
     traktOperations: toTrakt.length,
     traktHistoryOperations: historyOperations.length,
     traktWatchlistOperations: watchlistOperations.length,
+    traktRatingOperations: traktRatingOperations.length,
     ratingNextOffset: ratingCursor.nextOffset,
     fingerprint
   };
@@ -205,6 +224,24 @@ export function buildTraktWatchlistPayload(operations: BaselineOperation[]): Rec
   const shows = operations
     .filter((item) => item.direction === "stremio-to-trakt" && item.kind === "watchlist-series")
     .map((item) => ({ ids: { imdb: item.imdb } }));
+  return { movies, shows };
+}
+
+export function buildTraktRatingsPayload(operations: BaselineOperation[]): Record<string, unknown> {
+  const movies = operations
+    .filter((item) =>
+      item.direction === "stremio-to-trakt" &&
+      item.kind === "rating-movie" &&
+      typeof item.traktRating === "number"
+    )
+    .map((item) => ({ ids: { imdb: item.imdb }, rating: item.traktRating }));
+  const shows = operations
+    .filter((item) =>
+      item.direction === "stremio-to-trakt" &&
+      item.kind === "rating-series" &&
+      typeof item.traktRating === "number"
+    )
+    .map((item) => ({ ids: { imdb: item.imdb }, rating: item.traktRating }));
   return { movies, shows };
 }
 
