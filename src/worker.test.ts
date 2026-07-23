@@ -50,6 +50,7 @@ test("reports redacted setup status for a self-host install", async () => {
       stremio: { auth: "missing", userId: null },
       traktApp: { clientId: "missing", clientSecret: "missing", redirectUri: "missing" },
       traktOAuth: { access: "missing", refresh: "missing", expiresAt: null, username: null },
+      traktTransport: { mode: "direct-oauth", ready: false, storesTraktTokens: false },
       encryptionVersion: null
     },
     traktDevice: { state: "idle" },
@@ -88,6 +89,7 @@ test("saves Trakt app credentials encrypted and returns only readiness state", a
       stremio: { auth: "missing", userId: null },
       traktApp: { clientId: "configured", clientSecret: "configured", redirectUri: "configured" },
       traktOAuth: { access: "missing", refresh: "missing", expiresAt: null, username: null },
+      traktTransport: { mode: "direct-oauth", ready: false, storesTraktTokens: false },
       encryptionVersion: 1
     }
   });
@@ -225,6 +227,147 @@ test("links a verified Stremio auth key without exposing it", async () => {
   assert.equal(serialized.includes("stre...[redacted]...5678"), true);
 });
 
+test("enables delegated Trakt access with an explicit account guard and clears direct tokens", async () => {
+  const db = new MemoryD1();
+  const createdAt = Math.floor(Date.now() / 1000);
+  const externalFetch: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url === "https://stremio.test/api/getUser") {
+      return Response.json({
+        result: {
+          _id: "stremio-user-12345678",
+          trakt: {
+            access_token: "stremio-held-access-token",
+            refresh_token: "stremio-held-refresh-token",
+            created_at: createdAt,
+            expires_in: 604800
+          }
+        }
+      });
+    }
+    if (url === "https://trakt.test/users/settings") {
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("trakt-api-key"), "stremio-client-id");
+      assert.equal(headers.get("authorization"), "Bearer stremio-held-access-token");
+      return Response.json({ user: { username: "delegated_test" } });
+    }
+    return new Response(null, { status: 404 });
+  };
+  const env = { ...workerEnv(db), STREMIO_TRAKT_CLIENT_ID: "stremio-client-id" };
+  const linked = await handleRequest(
+    authorizedRequest("https://syncio.example/api/setup/stremio", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "auth-key", authKey: "raw-stremio-auth-key" })
+    }),
+    env,
+    externalFetch
+  );
+  assert.equal(linked.status, 200);
+
+  Object.assign(db.connections.get("self-host")!, {
+    trakt_access_ciphertext: "old-direct-access",
+    trakt_refresh_ciphertext: "old-direct-refresh",
+    trakt_expires_at: "2026-07-30T00:00:00.000Z"
+  });
+  db.sessions.set("self-host", {
+    user_id: "self-host",
+    device_code_ciphertext: "pending-direct-device-code"
+  });
+  const response = await handleRequest(
+    authorizedRequest("https://syncio.example/api/setup/trakt-mode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "stremio-delegated",
+        expectedUsername: "DELEGATED_TEST"
+      })
+    }),
+    env,
+    externalFetch
+  );
+  const body = await response.json() as Record<string, unknown>;
+  const connection = db.connections.get("self-host");
+
+  assert.equal(response.status, 200);
+  assert.equal(connection?.trakt_auth_mode, "stremio-delegated");
+  assert.equal(connection?.trakt_username, "delegated_test");
+  assert.equal(connection?.trakt_access_ciphertext, null);
+  assert.equal(connection?.trakt_refresh_ciphertext, null);
+  assert.equal(connection?.trakt_expires_at, null);
+  assert.equal(db.sessions.has("self-host"), false);
+  assert.equal(JSON.stringify(body).includes("stremio-held-access-token"), false);
+  assert.equal(JSON.stringify(body).includes("stremio-held-refresh-token"), false);
+
+  const saveDirectApp = await handleRequest(
+    authorizedRequest("https://syncio.example/api/setup/trakt-app", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        clientId: "optional-client-id",
+        clientSecret: "optional-client-secret",
+        redirectUri: "https://syncio.example/oauth/trakt/callback"
+      })
+    }),
+    env,
+    externalFetch
+  );
+  assert.equal(saveDirectApp.status, 200);
+  assert.equal(db.connections.get("self-host")?.trakt_auth_mode, "stremio-delegated");
+  assert.equal(db.connections.get("self-host")?.trakt_username, "delegated_test");
+});
+
+test("refuses delegated Trakt access when the expected account does not match", async () => {
+  const db = new MemoryD1();
+  const createdAt = Math.floor(Date.now() / 1000);
+  const externalFetch: typeof fetch = async (input) => {
+    if (String(input) === "https://stremio.test/api/getUser") {
+      return Response.json({
+        result: {
+          _id: "stremio-user-12345678",
+          trakt: {
+            access_token: "stremio-held-access-token",
+            created_at: createdAt,
+            expires_in: 604800
+          }
+        }
+      });
+    }
+    if (String(input) === "https://trakt.test/users/settings") {
+      return Response.json({ user: { username: "actual_test_user" } });
+    }
+    return new Response(null, { status: 404 });
+  };
+  const env = { ...workerEnv(db), STREMIO_TRAKT_CLIENT_ID: "stremio-client-id" };
+  await handleRequest(
+    authorizedRequest("https://syncio.example/api/setup/stremio", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "auth-key", authKey: "raw-stremio-auth-key" })
+    }),
+    env,
+    externalFetch
+  );
+
+  const response = await handleRequest(
+    authorizedRequest("https://syncio.example/api/setup/trakt-mode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "stremio-delegated",
+        expectedUsername: "personal_account"
+      })
+    }),
+    env,
+    externalFetch
+  );
+  const body = await response.json() as { error?: string };
+
+  assert.equal(response.status, 409);
+  assert.match(body.error ?? "", /actual_test_user, not personal_account/);
+  assert.equal(db.connections.get("self-host")?.trakt_auth_mode, "direct-oauth");
+});
+
 test("does not arm live mode through an ordinary settings save", async () => {
   const db = new MemoryD1();
   const settings = {
@@ -320,16 +463,17 @@ class MemoryD1 implements D1DatabaseLike {
             user_id: userId,
             stremio_auth_ciphertext: bound[1],
             stremio_user_id: bound[2],
-            trakt_client_id_ciphertext: bound[3],
-            trakt_client_secret_ciphertext: bound[4],
-            trakt_redirect_uri: bound[5],
-            trakt_access_ciphertext: bound[6],
-            trakt_refresh_ciphertext: bound[7],
-            trakt_expires_at: bound[8],
-            trakt_username: bound[9],
-            encryption_version: bound[10],
-            created_at: existing?.created_at ?? bound[11],
-            updated_at: bound[12]
+            trakt_auth_mode: bound[3],
+            trakt_client_id_ciphertext: bound[4],
+            trakt_client_secret_ciphertext: bound[5],
+            trakt_redirect_uri: bound[6],
+            trakt_access_ciphertext: bound[7],
+            trakt_refresh_ciphertext: bound[8],
+            trakt_expires_at: bound[9],
+            trakt_username: bound[10],
+            encryption_version: bound[11],
+            created_at: existing?.created_at ?? bound[12],
+            updated_at: bound[13]
           });
         }
         if (query.startsWith("INSERT INTO trakt_device_sessions")) {

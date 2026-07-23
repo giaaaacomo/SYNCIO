@@ -11,6 +11,7 @@ export async function runScheduledSync(input: {
   fetcher: typeof fetch;
   traktApiBase?: string | undefined;
   stremioApiBase?: string | undefined;
+  stremioTraktClientId?: string | undefined;
   stremioLikesBase?: string | undefined;
   cinemetaVideoIdsBase?: string | undefined;
   mode?: "scheduled" | "manual";

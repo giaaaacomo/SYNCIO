@@ -2,7 +2,12 @@ import { authorizeSetup } from "./auth/setup-auth.js";
 import { decryptSecret, encryptSecret } from "./crypto/secrets.js";
 import { manifest, SYNCIO_VERSION } from "./manifest.js";
 import { isD1Database, readStorageStatus } from "./storage/d1.js";
-import { getConnection, upsertConnection, type ConnectionRecord } from "./storage/repositories/connections.js";
+import {
+  getConnection,
+  upsertConnection,
+  type ConnectionRecord,
+  type TraktAuthMode
+} from "./storage/repositories/connections.js";
 import {
   deleteTraktDeviceSession,
   getTraktDeviceSession,
@@ -17,7 +22,13 @@ import {
   upsertHostedSyncSettings,
   type HostedSyncSettings
 } from "./storage/repositories/users.js";
-import { fetchStremioIdentity, loginToStremio, StremioApiError } from "./stremio/account.js";
+import {
+  DEFAULT_STREMIO_TRAKT_CLIENT_ID,
+  fetchStremioIdentity,
+  fetchStremioTraktAuthorization,
+  loginToStremio,
+  StremioApiError
+} from "./stremio/account.js";
 import { activateWorkerSync, applyWorkerSync } from "./sync/apply.js";
 import { previewWorkerSync } from "./sync/preview.js";
 import { runScheduledSync } from "./sync/scheduled.js";
@@ -34,6 +45,7 @@ interface Env {
   SYNCIO_SETUP_TOKEN?: string;
   TRAKT_API_BASE?: string;
   STREMIO_API_BASE?: string;
+  STREMIO_TRAKT_CLIENT_ID?: string;
   STREMIO_LIKES_BASE?: string;
   CINEMETA_VIDEO_IDS_BASE?: string;
 }
@@ -60,6 +72,7 @@ export default {
       fetcher: fetch,
       traktApiBase: env.TRAKT_API_BASE,
       stremioApiBase: env.STREMIO_API_BASE,
+      stremioTraktClientId: env.STREMIO_TRAKT_CLIENT_ID,
       stremioLikesBase: env.STREMIO_LIKES_BASE,
       cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
     });
@@ -121,6 +134,10 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
     return pollTraktLink(env, externalFetch);
   }
 
+  if (url.pathname === "/api/setup/trakt-mode" && request.method === "POST") {
+    return setTraktTransport(request, env, externalFetch);
+  }
+
   if (url.pathname === "/api/setup/stremio" && request.method === "POST") {
     return linkStremio(request, env, externalFetch);
   }
@@ -141,6 +158,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         fetcher: externalFetch,
         traktApiBase: env.TRAKT_API_BASE,
         stremioApiBase: env.STREMIO_API_BASE,
+        stremioTraktClientId: env.STREMIO_TRAKT_CLIENT_ID,
         stremioLikesBase: env.STREMIO_LIKES_BASE,
         cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
       }));
@@ -163,6 +181,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         fetcher: externalFetch,
         traktApiBase: env.TRAKT_API_BASE,
         stremioApiBase: env.STREMIO_API_BASE,
+        stremioTraktClientId: env.STREMIO_TRAKT_CLIENT_ID,
         stremioLikesBase: env.STREMIO_LIKES_BASE,
         cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
       }));
@@ -182,6 +201,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         fetcher: externalFetch,
         traktApiBase: env.TRAKT_API_BASE,
         stremioApiBase: env.STREMIO_API_BASE,
+        stremioTraktClientId: env.STREMIO_TRAKT_CLIENT_ID,
         stremioLikesBase: env.STREMIO_LIKES_BASE,
         cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE,
         mode: "manual"
@@ -245,6 +265,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         fetcher: externalFetch,
         traktApiBase: env.TRAKT_API_BASE,
         stremioApiBase: env.STREMIO_API_BASE,
+        stremioTraktClientId: env.STREMIO_TRAKT_CLIENT_ID,
         stremioLikesBase: env.STREMIO_LIKES_BASE,
         cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
       }));
@@ -313,14 +334,19 @@ async function saveTraktAppCredentials(request: Request, env: Env): Promise<Resp
     );
 
     await ensureUser(env.SYNCIO_DB, SELF_HOST_USER_ID);
+    const existing = await getConnection(env.SYNCIO_DB, SELF_HOST_USER_ID);
     const connection = await upsertConnection(env.SYNCIO_DB, SELF_HOST_USER_ID, {
       traktClientIdCiphertext: encryptedClientId.value,
       traktClientSecretCiphertext: encryptedClientSecret.value,
       traktRedirectUri: redirectUri,
-      traktAccessCiphertext: null,
-      traktRefreshCiphertext: null,
-      traktExpiresAt: null,
-      traktUsername: null,
+      ...(existing?.traktAuthMode === "stremio-delegated"
+        ? {}
+        : {
+          traktAccessCiphertext: null,
+          traktRefreshCiphertext: null,
+          traktExpiresAt: null,
+          traktUsername: null
+        }),
       encryptionVersion: encryptedClientId.encryptionVersion
     });
     await deleteTraktDeviceSession(env.SYNCIO_DB, SELF_HOST_USER_ID);
@@ -430,6 +456,7 @@ async function pollTraktLink(env: Env, externalFetch: typeof fetch): Promise<Res
     ]);
     const expiresAt = new Date((result.tokens.createdAt + result.tokens.expiresIn) * 1000).toISOString();
     const connection = await upsertConnection(prerequisites.db, SELF_HOST_USER_ID, {
+      traktAuthMode: "direct-oauth",
       traktAccessCiphertext: encryptedAccess.value,
       traktRefreshCiphertext: encryptedRefresh.value,
       traktExpiresAt: expiresAt,
@@ -467,7 +494,27 @@ async function linkStremio(request: Request, env: Env, externalFetch: typeof fet
       return json({ error: "Unsupported Stremio link mode." }, 400);
     }
 
-    const identity = await fetchStremioIdentity(authKey, externalFetch, env.STREMIO_API_BASE);
+    const existing = await getConnection(env.SYNCIO_DB, SELF_HOST_USER_ID);
+    let identity;
+    if (existing?.traktAuthMode === "stremio-delegated" && existing.traktUsername) {
+      const authorization = await fetchStremioTraktAuthorization(
+        authKey,
+        externalFetch,
+        env.STREMIO_API_BASE
+      );
+      const traktIdentity = await fetchTraktIdentity(
+        env.STREMIO_TRAKT_CLIENT_ID ?? DEFAULT_STREMIO_TRAKT_CLIENT_ID,
+        authorization.accessToken,
+        externalFetch,
+        env.TRAKT_API_BASE
+      );
+      if (!sameTraktUsername(traktIdentity.username, existing.traktUsername)) {
+        throw new Error("This Stremio account is linked to a different Trakt account.");
+      }
+      identity = { userId: authorization.userId };
+    } else {
+      identity = await fetchStremioIdentity(authKey, externalFetch, env.STREMIO_API_BASE);
+    }
     const encryptedAuth = await encryptSecret(authKey, env.SYNCIO_ENCRYPTION_KEY, `${SELF_HOST_USER_ID}:stremio-auth`);
     await ensureUser(env.SYNCIO_DB, SELF_HOST_USER_ID);
     const connection = await upsertConnection(env.SYNCIO_DB, SELF_HOST_USER_ID, {
@@ -477,10 +524,96 @@ async function linkStremio(request: Request, env: Env, externalFetch: typeof fet
     });
     return json({ ok: true, connections: summarizeConnection(connection) });
   } catch (error) {
+    if (error instanceof TraktApiError && error.status === 429) return traktRateLimitResponse(error);
     if (error instanceof StremioApiError) {
       return json({ error: error.message }, error.status >= 500 ? 502 : 400);
     }
+    if (error instanceof TraktApiError) {
+      return json({ error: error.message }, error.status >= 500 ? 502 : 409);
+    }
     return json({ error: error instanceof Error ? error.message : "Could not link Stremio." }, 400);
+  }
+}
+
+async function setTraktTransport(
+  request: Request,
+  env: Env,
+  externalFetch: typeof fetch
+): Promise<Response> {
+  if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+  if (!env.SYNCIO_ENCRYPTION_KEY) return json({ error: "SYNCIO_ENCRYPTION_KEY is not configured." }, 503);
+
+  let body: Record<string, unknown>;
+  try {
+    body = objectValue(await request.json(), "body");
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Invalid JSON body." }, 400);
+  }
+
+  try {
+    const mode = traktAuthModeValue(body.mode);
+    const connection = await getConnection(env.SYNCIO_DB, SELF_HOST_USER_ID);
+    if (!connection) return json({ error: "Link Stremio before choosing a Trakt transport." }, 409);
+
+    if (mode === "direct-oauth") {
+      if (!directTraktReady(connection)) {
+        return json({ error: "Complete Direct Trakt OAuth before selecting it." }, 409);
+      }
+      const saved = await upsertConnection(env.SYNCIO_DB, SELF_HOST_USER_ID, {
+        traktAuthMode: mode,
+        encryptionVersion: connection.encryptionVersion
+      });
+      return json({ ok: true, connections: summarizeConnection(saved) });
+    }
+
+    if (!connection.stremioAuthCiphertext || !connection.stremioUserId) {
+      return json({ error: "Link Stremio before enabling delegated Trakt access." }, 409);
+    }
+    const expectedUsername = traktUsernameValue(body.expectedUsername);
+    const authKey = await decryptSecret(
+      connection.stremioAuthCiphertext,
+      env.SYNCIO_ENCRYPTION_KEY,
+      `${SELF_HOST_USER_ID}:stremio-auth`
+    );
+    const authorization = await fetchStremioTraktAuthorization(
+      authKey,
+      externalFetch,
+      env.STREMIO_API_BASE
+    );
+    if (authorization.userId !== connection.stremioUserId) {
+      throw new Error("Stremio account guard failed while enabling delegated Trakt access.");
+    }
+    const identity = await fetchTraktIdentity(
+      env.STREMIO_TRAKT_CLIENT_ID ?? DEFAULT_STREMIO_TRAKT_CLIENT_ID,
+      authorization.accessToken,
+      externalFetch,
+      env.TRAKT_API_BASE
+    );
+    if (!sameTraktUsername(identity.username, expectedUsername)) {
+      return json({
+        error: `Account guard failed: Stremio is linked to Trakt user ${identity.username}, not ${expectedUsername}.`
+      }, 409);
+    }
+    const saved = await upsertConnection(env.SYNCIO_DB, SELF_HOST_USER_ID, {
+      traktAuthMode: mode,
+      traktAccessCiphertext: null,
+      traktRefreshCiphertext: null,
+      traktExpiresAt: null,
+      traktUsername: identity.username,
+      encryptionVersion: connection.encryptionVersion
+    });
+    await deleteTraktDeviceSession(env.SYNCIO_DB, SELF_HOST_USER_ID);
+    return json({ ok: true, connections: summarizeConnection(saved) });
+  } catch (error) {
+    if (error instanceof TraktApiError && error.status === 429) return traktRateLimitResponse(error);
+    if (error instanceof StremioApiError) {
+      return json({ error: error.message }, error.status >= 500 ? 502 : 400);
+    }
+    if (error instanceof TraktApiError) {
+      const status = error.status >= 500 ? 502 : 409;
+      return json({ error: error.message }, status);
+    }
+    return json({ error: error instanceof Error ? error.message : "Could not change Trakt transport." }, 400);
   }
 }
 
@@ -557,6 +690,7 @@ function traktRateLimitResponse(error: TraktApiError): Response {
 }
 
 function summarizeConnection(connection: ConnectionRecord | null) {
+  const transportMode = connection?.traktAuthMode ?? "direct-oauth";
   return {
     stremio: {
       auth: connection?.stremioAuthCiphertext ? "configured" : "missing",
@@ -573,8 +707,29 @@ function summarizeConnection(connection: ConnectionRecord | null) {
       expiresAt: connection?.traktExpiresAt ?? null,
       username: connection?.traktUsername ?? null
     },
+    traktTransport: {
+      mode: transportMode,
+      ready: connection
+        ? transportMode === "stremio-delegated"
+          ? Boolean(connection.stremioAuthCiphertext && connection.stremioUserId && connection.traktUsername)
+          : directTraktReady(connection)
+        : false,
+      storesTraktTokens: Boolean(connection?.traktAccessCiphertext || connection?.traktRefreshCiphertext)
+    },
     encryptionVersion: connection?.encryptionVersion ?? null
   };
+}
+
+function directTraktReady(connection: ConnectionRecord): boolean {
+  return Boolean(
+    connection.traktClientIdCiphertext &&
+    connection.traktClientSecretCiphertext &&
+    connection.traktRedirectUri &&
+    connection.traktAccessCiphertext &&
+    connection.traktRefreshCiphertext &&
+    connection.traktExpiresAt &&
+    connection.traktUsername
+  );
 }
 
 function summarizeDeviceSession(session: TraktDeviceSession | null) {
@@ -636,6 +791,24 @@ function objectValue(value: unknown, label: string): Record<string, unknown> {
 function stringValue(value: unknown, label: string): string {
   if (typeof value === "string" && value.length > 0) return value;
   throw new Error(`${label} must be a non-empty string.`);
+}
+
+function traktAuthModeValue(value: unknown): TraktAuthMode {
+  if (value === "direct-oauth" || value === "stremio-delegated") return value;
+  throw new Error("Unsupported Trakt transport.");
+}
+
+function traktUsernameValue(value: unknown): string {
+  if (typeof value !== "string") throw new Error("expectedUsername must be a string.");
+  const username = value.trim();
+  if (username.length < 1 || username.length > 100 || /\s/.test(username)) {
+    throw new Error("expectedUsername is invalid.");
+  }
+  return username;
+}
+
+function sameTraktUsername(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
 function trimmedString(value: unknown, label: string): string {
@@ -709,6 +882,7 @@ function configurePage(origin: string): string {
     label { display: grid; gap: 6px; font-weight: 700; }
     input { box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; background: Canvas; color: CanvasText; font: inherit; }
     button, .button { display: inline-block; width: fit-content; padding: 11px 16px; border: 0; border-radius: 6px; background: #2dd4bf; color: #082f2a; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
+    button.secondary { border: 1px solid color-mix(in srgb, CanvasText 32%, transparent); background: transparent; color: CanvasText; }
     button:disabled { cursor: wait; opacity: 0.55; }
     a { color: #14b8a6; }
     .panel { padding: 16px 0; border-top: 1px solid color-mix(in srgb, CanvasText 22%, transparent); }
@@ -718,6 +892,7 @@ function configurePage(origin: string): string {
     .hidden { display: none; }
     .user-code { font-size: 1.6rem; font-weight: 800; letter-spacing: 0; }
     fieldset { border: 0; padding: 0; margin: 0; }
+    summary { margin: 16px 0; font-size: 1.2rem; font-weight: 700; cursor: pointer; }
     .mode { display: flex; width: fit-content; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; overflow: hidden; }
     .mode label { display: block; padding: 9px 12px; cursor: pointer; }
     .mode label + label { border-left: 1px solid color-mix(in srgb, CanvasText 24%, transparent); }
@@ -758,16 +933,17 @@ function configurePage(origin: string): string {
       <dl>
         <dt>Storage</dt><dd id="storage-status">Loading</dd>
         <dt>Encryption</dt><dd id="encryption-status">Loading</dd>
+        <dt>Trakt transport</dt><dd id="trakt-transport-status">Loading</dd>
         <dt>Trakt app</dt><dd id="trakt-app-status">Loading</dd>
-        <dt>Trakt OAuth</dt><dd id="trakt-oauth-status">Loading</dd>
+        <dt>Direct OAuth</dt><dd id="trakt-oauth-status">Loading</dd>
         <dt>Stremio</dt><dd id="stremio-status">Loading</dd>
         <dt>Last sync</dt><dd id="last-sync-status">No runs yet</dd>
       </dl>
     </section>
 
-    <section class="panel protected hidden">
-      <h2>Trakt App</h2>
-      <p>Create your own Trakt application, then save its credentials here. Values are encrypted before they are stored in your D1 database.</p>
+    <details class="panel protected hidden">
+      <summary>Direct Trakt App (Optional)</summary>
+      <p>Fallback transport using a separate Trakt application. Values are encrypted before they are stored in your D1 database.</p>
       <p><a href="https://app.trakt.tv/settings/apps/api/new" target="_blank" rel="noreferrer">Create Trakt API app</a></p>
       <form id="trakt-app-form">
         <label>
@@ -785,10 +961,10 @@ function configurePage(origin: string): string {
         <button type="submit">Save Trakt App</button>
       </form>
       <p id="trakt-app-result" class="result muted"></p>
-    </section>
+    </details>
 
-    <section class="panel protected hidden">
-      <h2>Trakt Account</h2>
+    <details class="panel protected hidden">
+      <summary>Direct Trakt Account (Optional)</summary>
       <div class="actions">
         <button id="trakt-link-start" type="button">Link Trakt</button>
         <a id="trakt-activate" class="button hidden" target="_blank" rel="noreferrer">Open Trakt Approval</a>
@@ -796,7 +972,7 @@ function configurePage(origin: string): string {
       </div>
       <p id="trakt-user-code" class="user-code hidden"></p>
       <p id="trakt-link-result" class="result muted"></p>
-    </section>
+    </details>
 
     <section class="panel protected hidden">
       <h2>Stremio Account</h2>
@@ -815,6 +991,22 @@ function configurePage(origin: string): string {
         <button type="submit">Link Stremio</button>
       </form>
       <p id="stremio-result" class="result muted"></p>
+    </section>
+
+    <section class="panel protected hidden">
+      <h2>Trakt Transport</h2>
+      <p>Use the Trakt account already linked in Stremio. SYNCIO reads its access token for each run and does not store Trakt OAuth tokens in delegated mode.</p>
+      <form id="trakt-transport-form">
+        <label>
+          Expected Trakt Username
+          <input name="expectedUsername" autocomplete="username" required>
+        </label>
+        <div class="actions">
+          <button type="submit">Use Stremio Delegated</button>
+          <button id="trakt-use-direct" class="secondary" type="button">Use Direct OAuth</button>
+        </div>
+      </form>
+      <p id="trakt-transport-result" class="result muted"></p>
     </section>
 
     <section class="panel protected hidden">
@@ -917,8 +1109,12 @@ function configurePage(origin: string): string {
       const { response, body } = await setupApi("/api/setup/status");
       if (!response.ok) throw new Error(body.error || "Status failed");
       const connections = body.connections || {};
+      const transport = connections.traktTransport || {};
       byId("storage-status").textContent = body.storage?.d1 + ", " + (body.storage?.reachable ? "reachable" : "not reachable");
       byId("encryption-status").textContent = body.encryption;
+      byId("trakt-transport-status").textContent =
+        (transport.mode || "direct-oauth") + ", " + (transport.ready ? "ready" : "not ready") +
+        (transport.storesTraktTokens ? ", encrypted tokens in D1" : ", no Trakt tokens in D1");
       byId("trakt-app-status").textContent =
         "client id " + connections.traktApp?.clientId + ", client secret " + connections.traktApp?.clientSecret +
         ", redirect URI " + connections.traktApp?.redirectUri;
@@ -927,6 +1123,10 @@ function configurePage(origin: string): string {
         (connections.traktOAuth?.username ? ", account " + connections.traktOAuth.username : "");
       byId("stremio-status").textContent = "auth " + connections.stremio?.auth +
         (connections.stremio?.userId ? ", account " + connections.stremio.userId : "");
+      const usernameInput = byId("trakt-transport-form").elements.expectedUsername;
+      if (!usernameInput.value && connections.traktOAuth?.username) {
+        usernameInput.value = connections.traktOAuth.username;
+      }
       const latestRun = body.latestRun;
       byId("last-sync-status").textContent = latestRun
         ? latestRun.status + ", " + latestRun.mode + ", " + latestRun.plannedChanges + " planned, " + latestRun.finishedAt
@@ -1046,6 +1246,46 @@ function configurePage(origin: string): string {
       result.textContent = "Stremio linked as " + (body.connections?.stremio?.userId || "verified account") + ".";
       await refreshStatus();
     });
+
+    byId("trakt-transport-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      await setTraktTransport({
+        mode: "stremio-delegated",
+        expectedUsername: form.elements.expectedUsername.value
+      });
+    });
+
+    byId("trakt-use-direct").addEventListener("click", async () => {
+      await setTraktTransport({ mode: "direct-oauth" });
+    });
+
+    async function setTraktTransport(payload) {
+      const result = byId("trakt-transport-result");
+      result.textContent = "Verifying linked accounts";
+      const { response, body } = await setupApi("/api/setup/trakt-mode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        if (!showRateLimitCountdown(
+          payload.mode === "direct-oauth" ? byId("trakt-use-direct") : byId("trakt-transport-form").querySelector('button[type="submit"]'),
+          result,
+          body
+        )) {
+          result.textContent = body.error || "Trakt transport verification failed";
+        }
+        return;
+      }
+      result.textContent = payload.mode === "stremio-delegated"
+        ? "Stremio delegated transport enabled."
+        : "Direct OAuth transport enabled.";
+      previewFingerprint = "";
+      byId("sync-apply").classList.add("hidden");
+      byId("live-activation").classList.add("hidden");
+      await refreshStatus();
+    }
 
     byId("sync-settings-form").addEventListener("submit", async (event) => {
       event.preventDefault();

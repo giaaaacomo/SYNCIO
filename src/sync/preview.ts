@@ -38,6 +38,7 @@ export async function previewWorkerSync(input: {
   fetcher: typeof fetch;
   traktApiBase?: string | undefined;
   stremioApiBase?: string | undefined;
+  stremioTraktClientId?: string | undefined;
   cinemetaVideoIdsBase?: string | undefined;
   stremioLikesBase?: string | undefined;
 }): Promise<Record<string, unknown>> {
@@ -48,7 +49,9 @@ export async function previewWorkerSync(input: {
     userId: input.userId,
     encryptionKey: input.encryptionKey,
     fetcher: input.fetcher,
-    traktApiBase: input.traktApiBase
+    traktApiBase: input.traktApiBase,
+    stremioApiBase: input.stremioApiBase,
+    stremioTraktClientId: input.stremioTraktClientId
   });
   const [
     stremioIdentity,
@@ -160,7 +163,8 @@ export async function previewWorkerSync(input: {
     stage: "read-only-baseline",
     accounts: {
       stremio: "verified",
-      trakt: "verified"
+      trakt: "verified",
+      traktTransport: credentials.trakt.authMode
     },
     fetched: {
       stremioLibraryItems: library.length,
