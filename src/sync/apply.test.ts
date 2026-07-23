@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyWorkerSync, buildTraktHistoryPayload } from "./apply.js";
+import { activateWorkerSync, applyWorkerSync, buildTraktHistoryPayload } from "./apply.js";
 import type { D1DatabaseLike } from "../storage/d1.js";
 
-test("refuses apply outside test-account mode before any external request", async () => {
+test("refuses apply in preview-only mode before any external request", async () => {
   let fetched = false;
   const db: D1DatabaseLike = {
     prepare() {
@@ -24,7 +24,7 @@ test("refuses apply outside test-account mode before any external request", asyn
       fetched = true;
       throw new Error("unexpected fetch");
     }
-  }), /Test account mode/);
+  }), /not enabled for the current sync mode/);
   assert.equal(fetched, false);
 });
 
@@ -46,4 +46,65 @@ test("groups Stremio watched operations into a Trakt history payload", () => {
       ]
     }]
   });
+});
+
+test("requires the exact live activation phrase before reading state", async () => {
+  let prepared = false;
+  const db: D1DatabaseLike = {
+    prepare() {
+      prepared = true;
+      throw new Error("unexpected database access");
+    }
+  };
+
+  await assert.rejects(() => activateWorkerSync({
+    db,
+    userId: "self-host",
+    encryptionKey: "unused",
+    expectedFingerprint: "a".repeat(64),
+    confirmation: "enable syncio",
+    fetcher: async () => {
+      throw new Error("unexpected fetch");
+    }
+  }), /Type ENABLE SYNCIO/);
+  assert.equal(prepared, false);
+});
+
+test("refuses live apply when account scope has no activation record", async () => {
+  let fetched = false;
+  const db: D1DatabaseLike = {
+    prepare(query: string) {
+      return {
+        bind() { return this; },
+        async first<T>() {
+          if (query.includes("SELECT scope")) return {
+            scope: "account",
+            history_mode: "union",
+            watched_enabled: 1,
+            rating_sync_enabled: 1,
+            library_watchlist_enabled: 1,
+            removals_enabled: 0,
+            like_threshold: 7,
+            love_threshold: 9,
+            sync_interval_minutes: 60,
+            optional_catalogs_enabled: 0
+          } as T;
+          return null;
+        },
+        async run() { return { success: true }; }
+      };
+    }
+  };
+
+  await assert.rejects(() => applyWorkerSync({
+    db,
+    userId: "self-host",
+    encryptionKey: "unused",
+    expectedFingerprint: "a".repeat(64),
+    fetcher: async () => {
+      fetched = true;
+      throw new Error("unexpected fetch");
+    }
+  }), /Live sync is not armed/);
+  assert.equal(fetched, false);
 });

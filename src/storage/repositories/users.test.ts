@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  activateLiveSync,
   defaultHostedSyncSettings,
   ensureUser,
   getHostedSyncSettings,
+  getLiveSyncActivation,
   getUser,
   upsertHostedSyncSettings,
   type HostedSyncSettings
@@ -43,6 +45,25 @@ test("upserts hosted sync settings", async () => {
   assert.equal(saved.watchedEnabled, false);
   assert.equal(saved.likeThreshold, 6);
   assert.equal(saved.loveThreshold, 10);
+});
+
+test("arms live sync only from preview mode and clears activation when disabled", async () => {
+  const db = new MemoryD1();
+  await ensureUser(db, "user_1", "2026-07-20T00:00:00.000Z");
+  await upsertHostedSyncSettings(db, "user_1", defaultHostedSyncSettings());
+
+  const activation = await activateLiveSync(
+    db,
+    "user_1",
+    "a".repeat(64),
+    "2026-07-23T00:00:00.000Z"
+  );
+  assert.equal((await getHostedSyncSettings(db, "user_1")).scope, "account");
+  assert.deepEqual(await getLiveSyncActivation(db, "user_1"), activation);
+
+  await upsertHostedSyncSettings(db, "user_1", defaultHostedSyncSettings());
+  assert.equal((await getHostedSyncSettings(db, "user_1")).scope, "account-preview");
+  assert.equal(await getLiveSyncActivation(db, "user_1"), null);
 });
 
 class MemoryD1 implements D1DatabaseLike {
@@ -86,8 +107,19 @@ class MemoryD1 implements D1DatabaseLike {
             like_threshold: bound[7],
             love_threshold: bound[8],
             sync_interval_minutes: bound[9],
-            optional_catalogs_enabled: bound[10]
+            optional_catalogs_enabled: bound[10],
+            live_activated_at: bound[1] === "account" ? self.settings.get(String(bound[0]))?.live_activated_at ?? null : null,
+            live_activation_fingerprint: bound[1] === "account"
+              ? self.settings.get(String(bound[0]))?.live_activation_fingerprint ?? null
+              : null
           });
+        } else if (query.startsWith("UPDATE sync_settings SET")) {
+          const row = self.settings.get(String(bound[2]));
+          if (row?.scope === "account-preview") {
+            row.scope = "account";
+            row.live_activated_at = bound[0];
+            row.live_activation_fingerprint = bound[1];
+          }
         }
         return { success: true };
       }

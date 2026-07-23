@@ -199,6 +199,37 @@ test("links a verified Stremio auth key without exposing it", async () => {
   assert.equal(serialized.includes("stre...[redacted]...5678"), true);
 });
 
+test("does not arm live mode through an ordinary settings save", async () => {
+  const db = new MemoryD1();
+  const settings = {
+    scope: "account-preview",
+    historyMode: "union",
+    watchedEnabled: true,
+    ratingSyncEnabled: true,
+    libraryWatchlistEnabled: true,
+    removalsEnabled: false,
+    likeThreshold: 7,
+    loveThreshold: 9,
+    syncIntervalMinutes: 60,
+    optionalCatalogsEnabled: false
+  };
+  const saved = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(settings)
+  }), workerEnv(db));
+  assert.equal(saved.status, 200);
+
+  const rejected = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...settings, scope: "account" })
+  }), workerEnv(db));
+  assert.equal(rejected.status, 409);
+  assert.deepEqual(await rejected.json(), { error: "Run a preview and use Activate Live Sync instead." });
+  assert.equal(db.settings.get("self-host")?.scope, "account-preview");
+});
+
 function authorizedRequest(input: string, init: RequestInit = {}): Request {
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${SETUP_TOKEN}`);
@@ -219,6 +250,7 @@ class MemoryD1 implements D1DatabaseLike {
   readonly users = new Map<string, Record<string, unknown>>();
   readonly connections = new Map<string, Record<string, unknown>>();
   readonly sessions = new Map<string, Record<string, unknown>>();
+  readonly settings = new Map<string, Record<string, unknown>>();
 
   prepare(query: string) {
     let bound: unknown[] = [];
@@ -237,6 +269,9 @@ class MemoryD1 implements D1DatabaseLike {
         }
         if (query.includes("FROM trakt_device_sessions WHERE user_id = ?")) {
           return (self.sessions.get(String(bound[0])) ?? null) as T | null;
+        }
+        if (query.includes("FROM sync_settings WHERE user_id = ?")) {
+          return (self.settings.get(String(bound[0])) ?? null) as T | null;
         }
         if (query.includes("COUNT(*) AS count")) {
           return { count: 0 } as T;
@@ -288,6 +323,27 @@ class MemoryD1 implements D1DatabaseLike {
         }
         if (query.startsWith("DELETE FROM trakt_device_sessions")) {
           self.sessions.delete(String(bound[0]));
+        }
+        if (query.startsWith("INSERT INTO sync_settings")) {
+          const userId = String(bound[0]);
+          const existing = self.settings.get(userId);
+          self.settings.set(userId, {
+            user_id: userId,
+            scope: bound[1],
+            history_mode: bound[2],
+            watched_enabled: bound[3],
+            rating_sync_enabled: bound[4],
+            library_watchlist_enabled: bound[5],
+            removals_enabled: bound[6],
+            like_threshold: bound[7],
+            love_threshold: bound[8],
+            sync_interval_minutes: bound[9],
+            optional_catalogs_enabled: bound[10],
+            live_activated_at: bound[1] === "account" ? existing?.live_activated_at ?? null : null,
+            live_activation_fingerprint: bound[1] === "account"
+              ? existing?.live_activation_fingerprint ?? null
+              : null
+          });
         }
         return { success: true };
       }

@@ -1,6 +1,6 @@
 import type { D1DatabaseLike } from "../storage/d1.js";
 import { finishSyncRun, startSyncRun } from "../storage/repositories/sync-runs.js";
-import { getHostedSyncSettings } from "../storage/repositories/users.js";
+import { getHostedSyncSettings, getLiveSyncActivation } from "../storage/repositories/users.js";
 import { applyWorkerSync } from "./apply.js";
 import { previewWorkerSync } from "./preview.js";
 
@@ -19,8 +19,11 @@ export async function runScheduledSync(input: {
   if (settings.scope === "account-preview") {
     return { ok: true, status: "skipped", reason: "Preview-only mode." };
   }
-  if (settings.scope !== "test") {
-    return { ok: true, status: "skipped", reason: "Live-account scheduling is not enabled yet." };
+  if (settings.scope !== "test" && settings.scope !== "account") {
+    return { ok: true, status: "skipped", reason: "Synchronization mode is not active." };
+  }
+  if (settings.scope === "account" && !await getLiveSyncActivation(input.db, input.userId)) {
+    return { ok: true, status: "skipped", reason: "Live synchronization is not armed." };
   }
 
   const runId = await startSyncRun(input.db, input.userId, input.mode ?? "scheduled");

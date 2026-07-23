@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBaselinePlan, mapTraktRating } from "./preview.js";
+import { buildBaselinePlan, mapTraktRating, MAX_OPERATIONS_PER_RUN, operationBatch } from "./preview.js";
 import { encodeWatchedField } from "./watched-bitfield.js";
 
 test("plans movie history in both directions and watchlist additions without removals", async () => {
@@ -71,4 +71,25 @@ test("maps Trakt ratings using the configured thresholds", () => {
   assert.equal(mapTraktRating(8), "liked");
   assert.equal(mapTraktRating(9), "loved");
   assert.equal(mapTraktRating(10), "loved");
+});
+
+test("caps each account run to a bounded operation batch", () => {
+  const baseline = Array.from({ length: 300 }, (_, index) => ({
+    direction: "trakt-to-stremio" as const,
+    kind: "watched-movie" as const,
+    imdb: `tt-${index}`,
+    title: null
+  }));
+  const rating = [{
+    direction: "trakt-to-stremio" as const,
+    kind: "rating-movie" as const,
+    imdb: "tt-rating",
+    title: null,
+    ratingStatus: "loved" as const
+  }];
+  const batch = operationBatch(baseline, rating);
+
+  assert.equal(batch.length, MAX_OPERATIONS_PER_RUN);
+  assert.equal(batch[0]?.kind, "rating-movie");
+  assert.equal(batch.at(-1)?.imdb, "tt-248");
 });

@@ -1,7 +1,12 @@
 import type { D1DatabaseLike } from "../storage/d1.js";
-import { recordAppliedChange } from "../storage/repositories/change-ledger.js";
+import { recordAppliedChanges } from "../storage/repositories/change-ledger.js";
 import { setSyncCursor } from "../storage/repositories/sync-cursors.js";
-import { getHostedSyncSettings } from "../storage/repositories/users.js";
+import {
+  activateLiveSync,
+  getHostedSyncSettings,
+  getLiveSyncActivation,
+  upsertHostedSyncSettings
+} from "../storage/repositories/users.js";
 import { fetchStremioIdentity } from "../stremio/account.js";
 import { fetchTraktIdentity } from "../trakt/device-oauth.js";
 import {
@@ -28,8 +33,49 @@ export async function applyWorkerSync(input: {
   cinemetaVideoIdsBase?: string | undefined;
   stremioLikesBase?: string | undefined;
 }): Promise<Record<string, unknown>> {
+  return applyWorkerSyncForScopes(input, ["test", "account"]);
+}
+
+export async function activateWorkerSync(input: {
+  db: D1DatabaseLike;
+  userId: string;
+  encryptionKey: string;
+  expectedFingerprint: string;
+  confirmation: string;
+  fetcher: typeof fetch;
+  traktApiBase?: string | undefined;
+  stremioApiBase?: string | undefined;
+  cinemetaVideoIdsBase?: string | undefined;
+  stremioLikesBase?: string | undefined;
+}): Promise<Record<string, unknown>> {
+  if (input.confirmation !== "ENABLE SYNCIO") throw new Error("Type ENABLE SYNCIO to activate live synchronization.");
   const settings = await getHostedSyncSettings(input.db, input.userId);
-  if (settings.scope !== "test") throw new Error("Apply requires Test account mode.");
+  if (settings.scope !== "account-preview") throw new Error("Live sync activation requires Preview only mode.");
+  await upsertHostedSyncSettings(input.db, input.userId, settings);
+  const result = await applyWorkerSyncForScopes(input, ["account-preview"]);
+  const activation = await activateLiveSync(input.db, input.userId, input.expectedFingerprint);
+  return { ...result, liveSync: "active", activatedAt: activation.activatedAt };
+}
+
+async function applyWorkerSyncForScopes(
+  input: {
+    db: D1DatabaseLike;
+    userId: string;
+    encryptionKey: string;
+    expectedFingerprint: string;
+    fetcher: typeof fetch;
+    traktApiBase?: string | undefined;
+    stremioApiBase?: string | undefined;
+    cinemetaVideoIdsBase?: string | undefined;
+    stremioLikesBase?: string | undefined;
+  },
+  allowedScopes: Array<"test" | "account-preview" | "account">
+): Promise<Record<string, unknown>> {
+  const settings = await getHostedSyncSettings(input.db, input.userId);
+  if (!allowedScopes.includes(settings.scope)) throw new Error("Apply is not enabled for the current sync mode.");
+  if (settings.scope === "account" && !await getLiveSyncActivation(input.db, input.userId)) {
+    throw new Error("Live sync is not armed. Return to Preview only mode and activate it again.");
+  }
   if (settings.removalsEnabled) throw new Error("Removal sync is not supported.");
 
   const report = await previewWorkerSync(input);
@@ -135,13 +181,14 @@ export function buildTraktHistoryPayload(operations: BaselineOperation[]): Recor
 
 async function recordOperations(db: D1DatabaseLike, userId: string, operations: BaselineOperation[]): Promise<void> {
   const appliedAt = new Date().toISOString();
-  await Promise.all(operations.map(async (operation) => recordAppliedChange(db, {
+  const entries = await Promise.all(operations.map(async (operation) => ({
     key: await operationFingerprint([operation]),
     userId,
     direction: operation.direction,
     kind: operation.kind,
     summary: operationSummary(operation)
-  }, appliedAt)));
+  })));
+  await recordAppliedChanges(db, entries, appliedAt);
 }
 
 async function buildChanges(

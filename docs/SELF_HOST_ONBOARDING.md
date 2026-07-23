@@ -4,7 +4,7 @@ SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
 
 Each user deploys their own Cloudflare Worker + D1 database and creates their own Trakt application. SYNCIO code guides the setup, but the runtime that processes tokens and sync state belongs to the user.
 
-Version 0.1.0 is a technical preview for isolated test accounts. Unrestricted live-account writes and scheduling are intentionally disabled until the final safety validation is complete.
+Version 0.1.0 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
 
 ## Intended User Flow
 
@@ -18,7 +18,11 @@ Version 0.1.0 is a technical preview for isolated test accounts. Unrestricted li
 8. Paste the Trakt app client id and client secret.
 9. Link Trakt with Device OAuth.
 10. Link Stremio.
-11. Install the generated manifest in Stremio.
+11. Run a read-only full-account preview.
+12. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
+13. Install the generated manifest in Stremio.
+
+Each run applies at most 250 deterministic differences. Larger first imports converge over later hourly runs. Returning the mode to Preview only disarms live scheduling immediately. History removals remain disabled.
 
 ## Privacy Boundary
 

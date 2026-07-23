@@ -1,11 +1,12 @@
 # SYNCIO
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/giaaaacomo/SYNCIO)
+[![CI](https://github.com/giaaaacomo/SYNCIO/actions/workflows/ci.yml/badge.svg)](https://github.com/giaaaacomo/SYNCIO/actions/workflows/ci.yml)
 
 SYNCIO is a self-hosted TypeScript project for deep Stremio <-> Trakt synchronization. Each installation runs in the user's own Cloudflare account and stores its encrypted credentials and sync state in its own D1 database.
 
 > [!IMPORTANT]
-> Version 0.1.0 is a technical preview. The guarded test-account pipeline is implemented and validated, but automatic writes for unrestricted live accounts remain disabled. Deploy it only with isolated test accounts until that final safety gate is complete.
+> Version 0.1.0 is a technical preview. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. Removals are intentionally unsupported.
 
 This repository started with **Milestone 0** research probes that verify undocumented or weakly documented behavior. It now contains a self-hosted Cloudflare Worker with guarded watched reconciliation, rating mapping, watchlist import, D1 state, and hourly test scheduling.
 
@@ -130,7 +131,9 @@ The Worker has a small typed D1 adapter in `src/storage/d1.ts`. `/status.json` a
 
 Production is self-hosted: every user deploys their own Worker/D1 and creates their own Trakt application during onboarding. There is no shared production Trakt app and no hosted-by-us sync service planned.
 
-The deployed staging engine supports identity-checked previews, fingerprint-confirmed bidirectional watched test applies, paged Trakt-to-Stremio rating mapping, a D1 change ledger, persisted run status, and an hourly guarded scheduler. Live-account scheduling remains disabled while staging is evaluated.
+The Worker engine supports identity-checked previews, fingerprint-confirmed bidirectional watched applies, paged Trakt-to-Stremio rating mapping, a D1 change ledger, persisted run status, and an hourly guarded scheduler. Runs are limited to 250 deterministic operations and continue converging on later hours when a backlog remains.
+
+Live mode cannot be enabled by changing ordinary settings. Activation requires Preview only mode, the exact current preview fingerprint, the explicit `ENABLE SYNCIO` confirmation, and a successful first apply. Only then is the hourly scheduler armed. Switching back to Preview only clears that activation immediately.
 
 The Worker configure page now supports the self-host onboarding sequence:
 
@@ -143,7 +146,7 @@ The Worker configure page now supports the self-host onboarding sequence:
 
 The relevant protected routes are `GET /api/setup/status`, `GET|PUT /api/setup/settings`, `POST /api/setup/trakt-app`, `POST /api/setup/trakt/start`, `POST /api/setup/trakt/poll`, and `POST /api/setup/stremio`.
 
-`GET /api/sync/preview` verifies both linked identities, refreshes expiring Trakt tokens, and plans watched, watchlist, and rating differences. `POST /api/sync/apply` requires Test mode and the exact preview fingerprint. `POST /api/sync/run` invokes the same guarded pipeline used by the hourly cron.
+`GET /api/sync/preview` verifies both linked identities, refreshes expiring Trakt tokens, and plans watched, watchlist, and rating differences. `POST /api/sync/activate` performs the guarded first live apply and arms scheduling. `POST /api/sync/apply` requires an active mode and the exact preview fingerprint. `POST /api/sync/run` invokes the same guarded pipeline used by the hourly cron.
 
 Read [docs/SELF_HOST_ONBOARDING.md](docs/SELF_HOST_ONBOARDING.md) and [docs/CLOUDFLARE_PREDEPLOY.md](docs/CLOUDFLARE_PREDEPLOY.md) before deploying.
 

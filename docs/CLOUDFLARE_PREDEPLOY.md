@@ -35,7 +35,8 @@ corepack pnpm run worker:test
 - `POST /api/setup/trakt/poll`
 - `POST /api/setup/stremio`
 - `GET /api/sync/preview` runs an authenticated, read-only account baseline for watched movies, watched episodes, and movie watchlist differences.
-- `POST /api/sync/apply` applies only an exact fingerprint in Test mode.
+- `POST /api/sync/apply` applies only an exact fingerprint in Test or activated Live mode.
+- `POST /api/sync/activate` requires Preview only mode, `ENABLE SYNCIO`, the exact fingerprint, and a successful first apply before arming Live mode.
 - `POST /api/sync/run` invokes the guarded pipeline used by the hourly cron.
 
 The setup routes use the self-host installation id internally, require `Authorization: Bearer <SYNCIO_SETUP_TOKEN>`, and return only redacted readiness states. Authenticating values and the temporary Trakt device code are encrypted before D1 persistence.
@@ -66,7 +67,8 @@ The first value is `SYNCIO_ENCRYPTION_KEY`; the second is `SYNCIO_SETUP_TOKEN`. 
 - Generate an independent high-entropy `SYNCIO_SETUP_TOKEN`, for example with `openssl rand -base64 48`. Do not reuse the encryption key.
 - Trakt's current Device OAuth token endpoint requires both the app client id and client secret.
 - Stremio account writes rely on Stremio's internal account API, not the public Addon SDK contract. Account identity is verified before an auth key is accepted.
-- The free Workers plan currently allows 50 external subrequests per invocation. Cinemeta lookups are batched, and the default sync interval is one hour so scheduled runs receive the larger hourly Cron CPU budget.
+- The free Workers plan currently allows 50 external subrequests per invocation. Cinemeta lookups are batched, episode history follows bounded pagination, ratings scan one page at a time, and the sync interval is one hour.
+- Each run applies at most 250 logical differences. Ledger entries are inserted in grouped D1 queries to keep first imports within free-tier query limits.
 - Read [SELF_HOST_ONBOARDING.md](SELF_HOST_ONBOARDING.md) for the intended setup flow and privacy boundary.
 
 References:

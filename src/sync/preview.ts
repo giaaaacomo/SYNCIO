@@ -6,6 +6,8 @@ import {
   getCinemetaVideoSets,
   getStremioLibrary,
   traktGet,
+  traktGetAllPages,
+  traktGetPage,
   type CinemetaVideoSet,
   type StremioLibraryItem
 } from "./api-clients.js";
@@ -27,6 +29,8 @@ export interface BaselineOperation {
 
 const RATING_CURSOR_KEY = "ratings-movies";
 const RATING_BATCH_SIZE = 10;
+const RATING_PAGE_SIZE = 100;
+export const MAX_OPERATIONS_PER_RUN = 250;
 
 export async function previewWorkerSync(input: {
   db: D1DatabaseLike;
@@ -53,22 +57,59 @@ export async function previewWorkerSync(input: {
     library,
     watchedMovies,
     watchedShows,
-    watchedEpisodeHistory,
-    ratedMovies,
+    watchedEpisodeHistoryPage,
+    initialRatedMoviesPage,
     watchlistMovies
   ] = await Promise.all([
     fetchStremioIdentity(credentials.stremio.authKey, input.fetcher, input.stremioApiBase),
     fetchTraktIdentity(credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase),
     getStremioLibrary(credentials.stremio.authKey, input.fetcher, input.stremioApiBase),
-    traktGet("/sync/watched/movies", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase),
-    traktGet("/sync/watched/shows", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase),
-    traktGet("/sync/history/episodes?limit=1000&page=1", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase),
-    traktGet("/sync/ratings/movies?limit=1000&page=1", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase),
-    traktGet("/sync/watchlist/movies", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase)
+    settings.watchedEnabled
+      ? traktGet("/sync/watched/movies", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase)
+      : Promise.resolve([]),
+    settings.watchedEnabled
+      ? traktGet("/sync/watched/shows", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase)
+      : Promise.resolve([]),
+    settings.watchedEnabled
+      ? traktGetAllPages(
+        "/sync/history/episodes",
+        credentials.trakt.clientId,
+        credentials.trakt.accessToken,
+        input.fetcher,
+        input.traktApiBase
+      )
+      : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 }),
+    settings.ratingSyncEnabled
+      ? traktGetPage(
+        "/sync/ratings/movies",
+        credentials.trakt.clientId,
+        credentials.trakt.accessToken,
+        input.fetcher,
+        input.traktApiBase,
+        { page: Math.floor(ratingCursor / RATING_PAGE_SIZE) + 1, limit: RATING_PAGE_SIZE }
+      )
+      : Promise.resolve({ items: [], page: 1, pageCount: 1, itemCount: 0 }),
+    settings.libraryWatchlistEnabled
+      ? traktGet("/sync/watchlist/movies", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase)
+      : Promise.resolve([])
   ]);
   if (stremioIdentity.userId !== credentials.stremio.userId) throw new Error("Stremio account guard failed during preview.");
   if (traktIdentity.username !== credentials.trakt.username) throw new Error("Trakt account guard failed during preview.");
 
+  const watchedEpisodeHistory = watchedEpisodeHistoryPage.items;
+  let ratedMoviesPage = initialRatedMoviesPage;
+  const normalizedRatingOffset = ratedMoviesPage.itemCount > 0 ? ratingCursor % ratedMoviesPage.itemCount : 0;
+  const normalizedRatingPage = Math.floor(normalizedRatingOffset / RATING_PAGE_SIZE) + 1;
+  if (settings.ratingSyncEnabled && normalizedRatingPage !== ratedMoviesPage.page) {
+    ratedMoviesPage = await traktGetPage(
+      "/sync/ratings/movies",
+      credentials.trakt.clientId,
+      credentials.trakt.accessToken,
+      input.fetcher,
+      input.traktApiBase,
+      { page: normalizedRatingPage, limit: RATING_PAGE_SIZE }
+    );
+  }
   const showIds = new Set([
     ...inputShowImdbIds(watchedShows),
     ...inputEpisodeHistoryShowImdbIds(watchedEpisodeHistory),
@@ -86,16 +127,19 @@ export async function previewWorkerSync(input: {
   const ratingPlan = settings.ratingSyncEnabled
     ? await ratingOperations(
       credentials.stremio.authKey,
-      ratedMovies,
+      ratedMoviesPage.items,
       ratingCursor,
+      (ratedMoviesPage.page - 1) * RATING_PAGE_SIZE,
+      ratedMoviesPage.itemCount,
       settings.likeThreshold,
       settings.loveThreshold,
       input.fetcher,
       input.stremioLikesBase
     )
-    : { operations: [], offset: 0, checked: 0, total: arrayValue(ratedMovies).length, nextOffset: 0 };
-  baseline.push(...ratingPlan.operations);
-  const fingerprint = await operationFingerprint(baseline);
+    : { operations: [], offset: 0, checked: 0, total: 0, nextOffset: 0 };
+  const allOperations = [...ratingPlan.operations, ...baseline];
+  const operations = operationBatch(baseline, ratingPlan.operations);
+  const fingerprint = await operationFingerprint(operations);
   return {
     mode: "preview",
     apply: false,
@@ -109,14 +153,20 @@ export async function previewWorkerSync(input: {
       traktWatchedMovies: arrayValue(watchedMovies).length,
       traktWatchedShows: arrayValue(watchedShows).length,
       traktEpisodeHistoryEvents: arrayValue(watchedEpisodeHistory).length,
-      traktRatedMovies: arrayValue(ratedMovies).length,
+      traktEpisodeHistoryPages: watchedEpisodeHistoryPage.pagesFetched,
+      traktEpisodeHistoryTotal: watchedEpisodeHistoryPage.itemCount,
+      traktRatedMovies: ratedMoviesPage.itemCount,
+      traktRatedMoviesPage: ratedMoviesPage.page,
       traktRatedMoviesChecked: ratingPlan.checked,
       traktWatchlistMovies: arrayValue(watchlistMovies).length
     },
     operations: {
-      total: baseline.length,
+      total: operations.length,
+      totalDifferences: allOperations.length,
+      deferred: allOperations.length - operations.length,
+      hasMore: allOperations.length > operations.length,
       fingerprint,
-      items: baseline
+      items: operations
     },
     ratingScan: {
       cursorKey: RATING_CURSOR_KEY,
@@ -125,16 +175,23 @@ export async function previewWorkerSync(input: {
       total: ratingPlan.total,
       nextOffset: ratingPlan.nextOffset
     },
-    pendingCoverage: [
-      "live-account scheduler activation"
-    ]
+    pendingCoverage: []
   };
+}
+
+export function operationBatch(
+  baseline: BaselineOperation[],
+  ratingOperations: BaselineOperation[]
+): BaselineOperation[] {
+  return [...ratingOperations, ...baseline].slice(0, MAX_OPERATIONS_PER_RUN);
 }
 
 async function ratingOperations(
   authKey: string,
   ratedMovies: unknown,
   rawOffset: number,
+  pageStart: number,
+  totalRatings: number,
   likeThreshold: number,
   loveThreshold: number,
   fetcher: typeof fetch,
@@ -146,9 +203,13 @@ async function ratingOperations(
   total: number;
   nextOffset: number;
 }> {
-  const allRatings = arrayValue(ratedMovies);
-  const offset = allRatings.length > 0 ? rawOffset % allRatings.length : 0;
-  const batch = allRatings.slice(offset, offset + RATING_BATCH_SIZE);
+  const pageRatings = arrayValue(ratedMovies);
+  const offset = totalRatings > 0 ? rawOffset % totalRatings : 0;
+  const localOffset = Math.max(0, offset - pageStart);
+  const batch = pageRatings.slice(localOffset, localOffset + RATING_BATCH_SIZE);
+  if (totalRatings > offset && batch.length === 0) {
+    throw new Error("Trakt ratings pagination returned an empty page before the declared end.");
+  }
   const operations: BaselineOperation[] = [];
   for (const itemValue of batch) {
     const item = recordValue(itemValue);
@@ -167,8 +228,8 @@ async function ratingOperations(
       ratingStatus: target
     });
   }
-  const nextOffset = offset + batch.length >= allRatings.length ? 0 : offset + batch.length;
-  return { operations, offset, checked: batch.length, total: allRatings.length, nextOffset };
+  const nextOffset = offset + batch.length >= totalRatings ? 0 : offset + batch.length;
+  return { operations, offset, checked: batch.length, total: totalRatings, nextOffset };
 }
 
 export function mapTraktRating(

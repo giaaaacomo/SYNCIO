@@ -13,11 +13,12 @@ import { getLatestSyncRun } from "./storage/repositories/sync-runs.js";
 import {
   ensureUser,
   getHostedSyncSettings,
+  getLiveSyncActivation,
   upsertHostedSyncSettings,
   type HostedSyncSettings
 } from "./storage/repositories/users.js";
 import { fetchStremioIdentity, loginToStremio, StremioApiError } from "./stremio/account.js";
-import { applyWorkerSync } from "./sync/apply.js";
+import { activateWorkerSync, applyWorkerSync } from "./sync/apply.js";
 import { previewWorkerSync } from "./sync/preview.js";
 import { runScheduledSync } from "./sync/scheduled.js";
 import {
@@ -78,7 +79,15 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
 
   if (url.pathname === "/api/setup/settings" && request.method === "GET") {
     if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
-    return json(await getHostedSyncSettings(env.SYNCIO_DB, SELF_HOST_USER_ID));
+    const [settings, activation] = await Promise.all([
+      getHostedSyncSettings(env.SYNCIO_DB, SELF_HOST_USER_ID),
+      getLiveSyncActivation(env.SYNCIO_DB, SELF_HOST_USER_ID)
+    ]);
+    return json({
+      ...settings,
+      liveSync: activation ? "active" : "inactive",
+      liveActivatedAt: activation?.activatedAt ?? null
+    });
   }
 
   if (url.pathname === "/api/setup/settings" && request.method === "PUT") {
@@ -86,6 +95,10 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
     try {
       const settings = parseHostedSyncSettings(await request.json());
       await ensureUser(env.SYNCIO_DB, SELF_HOST_USER_ID);
+      const current = await getHostedSyncSettings(env.SYNCIO_DB, SELF_HOST_USER_ID);
+      if (settings.scope === "account" && current.scope !== "account") {
+        return json({ error: "Run a preview and use Activate Live Sync instead." }, 409);
+      }
       return json(await upsertHostedSyncSettings(env.SYNCIO_DB, SELF_HOST_USER_ID, settings));
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : "Invalid sync settings." }, 400);
@@ -112,13 +125,36 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
     return linkStremio(request, env, externalFetch);
   }
 
+  if (url.pathname === "/api/sync/activate" && request.method === "POST") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    if (!env.SYNCIO_ENCRYPTION_KEY) return json({ error: "SYNCIO_ENCRYPTION_KEY is not configured." }, 503);
+    try {
+      const body = objectValue(await request.json(), "body");
+      const expectedFingerprint = fingerprintValue(body.fingerprint);
+      const confirmation = stringValue(body.confirmation, "confirmation");
+      return json(await activateWorkerSync({
+        db: env.SYNCIO_DB,
+        userId: SELF_HOST_USER_ID,
+        encryptionKey: env.SYNCIO_ENCRYPTION_KEY,
+        expectedFingerprint,
+        confirmation,
+        fetcher: externalFetch,
+        traktApiBase: env.TRAKT_API_BASE,
+        stremioApiBase: env.STREMIO_API_BASE,
+        stremioLikesBase: env.STREMIO_LIKES_BASE,
+        cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
+      }));
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : "Live sync activation failed." }, 409);
+    }
+  }
+
   if (url.pathname === "/api/sync/apply" && request.method === "POST") {
     if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
     if (!env.SYNCIO_ENCRYPTION_KEY) return json({ error: "SYNCIO_ENCRYPTION_KEY is not configured." }, 503);
     try {
       const body = objectValue(await request.json(), "body");
-      const expectedFingerprint = stringValue(body.fingerprint, "fingerprint");
-      if (!/^[a-f0-9]{64}$/.test(expectedFingerprint)) throw new Error("Invalid preview fingerprint.");
+      const expectedFingerprint = fingerprintValue(body.fingerprint);
       return json(await applyWorkerSync({
         db: env.SYNCIO_DB,
         userId: SELF_HOST_USER_ID,
@@ -181,8 +217,8 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
       },
       storage,
       sync: {
-        engine: "bidirectional-test-apply",
-        scheduler: "hourly-guarded"
+        engine: "bidirectional-guarded-apply",
+        scheduler: "hourly-live-when-activated"
       }
     });
   }
@@ -193,7 +229,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
       storage: await readStorageStatus(env.SYNCIO_DB),
       sync: {
         preview: "read-only-baseline",
-        run: "bidirectional-test-apply"
+        run: "bidirectional-guarded-apply"
       }
     });
   }
@@ -580,7 +616,7 @@ function parseHostedSyncSettings(value: unknown): HostedSyncSettings {
     throw new Error("Invalid rating thresholds.");
   }
   const syncIntervalMinutes = intValue(record.syncIntervalMinutes, "syncIntervalMinutes");
-  if (![15, 30, 60].includes(syncIntervalMinutes)) throw new Error("Unsupported sync interval.");
+  if (syncIntervalMinutes !== 60) throw new Error("Only the hourly sync interval is supported.");
 
   return {
     scope,
@@ -647,6 +683,12 @@ function boolValue(value: unknown, label: string): boolean {
 function intValue(value: unknown, label: string): number {
   if (typeof value === "number" && Number.isInteger(value)) return value;
   throw new Error(`${label} must be an integer.`);
+}
+
+function fingerprintValue(value: unknown): string {
+  const fingerprint = stringValue(value, "fingerprint");
+  if (!/^[a-f0-9]{64}$/.test(fingerprint)) throw new Error("Invalid preview fingerprint.");
+  return fingerprint;
 }
 
 function configurePage(origin: string): string {
@@ -790,13 +832,11 @@ function configurePage(origin: string): string {
             <select name="scope">
               <option value="account-preview">Preview only</option>
               <option value="test">Test account</option>
-              <option value="account">Live account</option>
+              <option value="account" disabled>Live account (activate below)</option>
             </select>
           </label>
           <label>Interval
             <select name="syncIntervalMinutes">
-              <option value="15">15 minutes</option>
-              <option value="30">30 minutes</option>
               <option value="60">60 minutes</option>
             </select>
           </label>
@@ -812,6 +852,10 @@ function configurePage(origin: string): string {
       <h2>Sync Preview</h2>
       <button id="sync-preview" type="button">Run Read-only Preview</button>
       <button id="sync-apply" class="hidden" type="button">Apply Preview</button>
+      <div id="live-activation" class="hidden">
+        <label>Live confirmation <input id="live-confirmation" autocomplete="off" placeholder="ENABLE SYNCIO"></label>
+        <button id="sync-activate" type="button">Activate Live Sync</button>
+      </div>
       <p id="sync-preview-result" class="result muted"></p>
       <pre id="sync-preview-output" class="hidden"></pre>
     </section>
@@ -822,6 +866,7 @@ function configurePage(origin: string): string {
     let setupToken = sessionStorage.getItem(tokenKey) || "";
     let pollTimer;
     let previewFingerprint = "";
+    let currentScope = "account-preview";
 
     async function setupApi(path, options = {}) {
       const headers = new Headers(options.headers || {});
@@ -883,6 +928,8 @@ function configurePage(origin: string): string {
       for (const name of ["scope", "syncIntervalMinutes", "likeThreshold", "loveThreshold"]) {
         form.elements[name].value = String(body[name]);
       }
+      currentScope = String(body.scope || "account-preview");
+      form.elements.scope.querySelector('option[value="account"]').disabled = currentScope !== "account";
     }
 
     function renderAuthorization(authorization) {
@@ -1007,6 +1054,12 @@ function configurePage(origin: string): string {
         body: JSON.stringify(payload)
       });
       result.textContent = response.ok ? "Settings saved." : (body.error || "Save failed");
+      if (response.ok) {
+        currentScope = String(body.scope || payload.scope);
+        previewFingerprint = "";
+        byId("sync-apply").classList.add("hidden");
+        byId("live-activation").classList.add("hidden");
+      }
     });
 
     byId("sync-preview").addEventListener("click", async () => {
@@ -1019,15 +1072,23 @@ function configurePage(origin: string): string {
         result.textContent = body.error || "Preview failed";
         return;
       }
-      result.textContent = body.operations.total + " baseline changes found. No writes applied.";
+      const totalDifferences = body.operations.totalDifferences ?? body.operations.total;
+      const deferred = body.operations.deferred || 0;
+      result.textContent = totalDifferences + " differences found; " + body.operations.total +
+        " in this batch" + (deferred ? ", " + deferred + " deferred" : "") + ". No writes applied.";
       output.textContent = JSON.stringify(body, null, 2);
       output.classList.remove("hidden");
       previewFingerprint = body.operations.fingerprint || "";
-      byId("sync-apply").classList.toggle("hidden", !previewFingerprint || body.operations.total === 0);
+      byId("sync-apply").classList.toggle(
+        "hidden",
+        !previewFingerprint || body.operations.total === 0 || currentScope === "account-preview"
+      );
+      byId("live-activation").classList.toggle("hidden", !previewFingerprint || currentScope !== "account-preview");
     });
 
     byId("sync-apply").addEventListener("click", async () => {
-      if (!previewFingerprint || !window.confirm("Apply exactly the changes in the current preview to the test Stremio account?")) return;
+      const label = currentScope === "account" ? "live linked accounts" : "test accounts";
+      if (!previewFingerprint || !window.confirm("Apply exactly the current preview batch to the " + label + "?")) return;
       const result = byId("sync-preview-result");
       result.textContent = "Rechecking preview before apply";
       const { response, body } = await setupApi("/api/sync/apply", {
@@ -1044,6 +1105,32 @@ function configurePage(origin: string): string {
       previewFingerprint = "";
       byId("sync-apply").classList.add("hidden");
       await refreshStatus();
+    });
+
+    byId("sync-activate").addEventListener("click", async () => {
+      const confirmation = byId("live-confirmation").value;
+      const result = byId("sync-preview-result");
+      if (!previewFingerprint || confirmation !== "ENABLE SYNCIO") {
+        result.textContent = "Type ENABLE SYNCIO to activate live synchronization.";
+        return;
+      }
+      if (!window.confirm("Apply this preview batch and enable hourly live synchronization?")) return;
+      result.textContent = "Rechecking and applying the activation preview";
+      const { response, body } = await setupApi("/api/sync/activate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fingerprint: previewFingerprint, confirmation })
+      });
+      if (!response.ok) {
+        result.textContent = body.error || "Live sync activation failed";
+        return;
+      }
+      result.textContent = "Live synchronization active. " + body.applied + " operations applied.";
+      previewFingerprint = "";
+      byId("live-confirmation").value = "";
+      byId("live-activation").classList.add("hidden");
+      byId("sync-apply").classList.add("hidden");
+      await Promise.all([refreshSettings(), refreshStatus()]);
     });
 
     function schedulePoll(seconds) {

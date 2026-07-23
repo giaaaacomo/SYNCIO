@@ -20,6 +20,11 @@ export interface HostedSyncSettings {
   optionalCatalogsEnabled: boolean;
 }
 
+export interface LiveSyncActivation {
+  activatedAt: string;
+  fingerprint: string;
+}
+
 export function defaultHostedSyncSettings(): HostedSyncSettings {
   return {
     scope: "account-preview",
@@ -85,7 +90,10 @@ export async function upsertHostedSyncSettings(
       like_threshold = excluded.like_threshold,
       love_threshold = excluded.love_threshold,
       sync_interval_minutes = excluded.sync_interval_minutes,
-      optional_catalogs_enabled = excluded.optional_catalogs_enabled`)
+      optional_catalogs_enabled = excluded.optional_catalogs_enabled,
+      live_activated_at = CASE WHEN excluded.scope = 'account' THEN sync_settings.live_activated_at ELSE NULL END,
+      live_activation_fingerprint = CASE
+        WHEN excluded.scope = 'account' THEN sync_settings.live_activation_fingerprint ELSE NULL END`)
     .bind(
       userId,
       settings.scope,
@@ -101,6 +109,36 @@ export async function upsertHostedSyncSettings(
     )
     .run();
   return getHostedSyncSettings(db, userId);
+}
+
+export async function activateLiveSync(
+  db: D1DatabaseLike,
+  userId: string,
+  fingerprint: string,
+  activatedAt = new Date().toISOString()
+): Promise<LiveSyncActivation> {
+  await db.prepare(`UPDATE sync_settings SET
+    scope = 'account', live_activated_at = ?, live_activation_fingerprint = ?
+    WHERE user_id = ? AND scope = 'account-preview'`)
+    .bind(activatedAt, fingerprint, userId)
+    .run();
+  const settings = await getHostedSyncSettings(db, userId);
+  if (settings.scope !== "account") throw new Error("Live sync activation state changed. Start from Preview only mode.");
+  return { activatedAt, fingerprint };
+}
+
+export async function getLiveSyncActivation(
+  db: D1DatabaseLike,
+  userId: string
+): Promise<LiveSyncActivation | null> {
+  const row = await db.prepare(`SELECT live_activated_at, live_activation_fingerprint
+    FROM sync_settings WHERE user_id = ? AND scope = 'account'`)
+    .bind(userId)
+    .first<Record<string, unknown>>();
+  if (!row) return null;
+  const activatedAt = nullableString(row.live_activated_at, "sync_settings.live_activated_at");
+  const fingerprint = nullableString(row.live_activation_fingerprint, "sync_settings.live_activation_fingerprint");
+  return activatedAt && fingerprint ? { activatedAt, fingerprint } : null;
 }
 
 function parseUser(row: Record<string, unknown>): UserRecord {
