@@ -35,11 +35,22 @@ test("links configure onboarding to the current Trakt app creation page", async 
 test("keeps the delegated flow primary and direct Trakt controls advanced", async () => {
   const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
   const body = await response.text();
+  const stremioStep = body.indexOf('id="step-stremio"');
+  const traktStep = body.indexOf('id="step-trakt"');
+  const settingsStep = body.indexOf('id="step-settings"');
+  const syncStep = body.indexOf('id="step-sync"');
+  const installStep = body.indexOf('id="step-install"');
   const advancedOptions = body.indexOf('id="advanced-options"');
 
   assert.ok(advancedOptions > 0);
-  assert.ok(body.indexOf('id="stremio-form"') < advancedOptions);
-  assert.ok(body.indexOf('id="trakt-transport-form"') < advancedOptions);
+  assert.ok(stremioStep < traktStep);
+  assert.ok(traktStep < settingsStep);
+  assert.ok(settingsStep < syncStep);
+  assert.ok(syncStep < installStep);
+  assert.ok(installStep < advancedOptions);
+  assert.match(body, /<ol class="progress protected hidden" aria-label="Setup progress">/);
+  assert.match(body, /class="step protected hidden is-locked" id="step-trakt"/);
+  assert.match(body, /Open in Stremio/);
   assert.ok(body.indexOf('id="trakt-app-status"') > advancedOptions);
   assert.ok(body.indexOf('id="trakt-app-form"') > advancedOptions);
   assert.ok(body.indexOf('id="trakt-link-start"') > advancedOptions);

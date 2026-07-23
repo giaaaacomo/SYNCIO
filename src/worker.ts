@@ -868,71 +868,384 @@ function configurePage(origin: string): string {
   <title>SYNCIO</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { margin: 0; min-height: 100vh; background: Canvas; color: CanvasText; }
-    main { width: min(760px, calc(100vw - 32px)); margin: 64px auto; }
-    h1 { margin: 0 0 8px; font-size: clamp(2.5rem, 8vw, 5rem); line-height: 0.95; letter-spacing: 0; }
-    h2 { margin: 32px 0 12px; font-size: 1.2rem; }
-    p, dd { color: color-mix(in srgb, CanvasText 68%, transparent); }
-    code { display: block; padding: 12px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; overflow-wrap: anywhere; }
-    dl { display: grid; grid-template-columns: minmax(120px, 180px) 1fr; gap: 8px 16px; margin: 16px 0; }
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      --bg: #f4f6f7;
+      --surface: #ffffff;
+      --text: #172126;
+      --muted: #66747b;
+      --border: #d8e0e3;
+      --accent: #0f766e;
+      --accent-strong: #115e59;
+      --accent-soft: #dff5f1;
+      --success: #15803d;
+      --success-soft: #e5f6e9;
+      --warning: #a16207;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111619;
+        --surface: #171e21;
+        --text: #eef3f4;
+        --muted: #9aa8ae;
+        --border: #344147;
+        --accent: #5eead4;
+        --accent-strong: #99f6e4;
+        --accent-soft: #153d39;
+        --success: #86efac;
+        --success-soft: #173b25;
+        --warning: #facc15;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    main { width: min(720px, calc(100vw - 32px)); margin: 40px auto 72px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 4px; font-size: 2rem; line-height: 1.1; letter-spacing: 0; }
+    h2 { margin-bottom: 4px; font-size: 1.15rem; letter-spacing: 0; }
+    h3 { margin-bottom: 8px; font-size: 1rem; letter-spacing: 0; }
+    p, dd { color: var(--muted); }
+    a { color: var(--accent); }
+    code {
+      display: block;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      overflow-wrap: anywhere;
+    }
+    dl { display: grid; grid-template-columns: minmax(120px, 180px) 1fr; gap: 8px 16px; margin: 16px 0 0; }
     dt { font-weight: 700; }
     dd { margin: 0; }
-    form { display: grid; gap: 12px; margin-top: 16px; }
-    label { display: grid; gap: 6px; font-weight: 700; }
-    input { box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; background: Canvas; color: CanvasText; font: inherit; }
-    button, .button { display: inline-block; width: fit-content; padding: 11px 16px; border: 0; border-radius: 6px; background: #2dd4bf; color: #082f2a; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
-    button.secondary { border: 1px solid color-mix(in srgb, CanvasText 32%, transparent); background: transparent; color: CanvasText; }
+    form { display: grid; gap: 14px; margin-top: 18px; }
+    label { display: grid; gap: 6px; font-size: 0.9rem; font-weight: 700; }
+    input, select {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: none;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+    }
+    input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    button, .button {
+      display: inline-flex;
+      width: fit-content;
+      min-height: 42px;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 750;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    @media (prefers-color-scheme: dark) {
+      button, .button { color: #082f2a; }
+    }
+    button:hover, .button:hover { background: var(--accent-strong); }
+    button.secondary { border: 1px solid var(--border); background: transparent; color: var(--text); }
+    button.secondary:hover { border-color: var(--accent); background: var(--accent-soft); }
     button:disabled { cursor: wait; opacity: 0.55; }
-    a { color: #14b8a6; }
-    .panel { padding: 16px 0; border-top: 1px solid color-mix(in srgb, CanvasText 22%, transparent); }
-    .muted { color: color-mix(in srgb, CanvasText 58%, transparent); }
-    .result { min-height: 1.5em; }
+    fieldset { border: 0; padding: 0; margin: 0; }
+    summary { cursor: pointer; font-weight: 750; }
+    pre {
+      max-height: 420px;
+      overflow: auto;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+    .brand-subtitle { margin: 0; color: var(--muted); }
+    .version { flex: none; padding-top: 6px; color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+    .access-card {
+      max-width: 480px;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .access-card h2 { font-size: 1.25rem; }
+    .access-card form { margin-top: 20px; }
+    .progress {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0;
+      margin: 0 0 20px;
+      padding: 0;
+      list-style: none;
+    }
+    .progress li { position: relative; min-width: 0; padding: 22px 6px 0 0; color: var(--muted); font-size: 0.75rem; font-weight: 700; }
+    .progress li::before {
+      position: absolute;
+      z-index: 1;
+      top: 3px;
+      left: 0;
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      background: var(--bg);
+      content: "";
+    }
+    .progress li::after {
+      position: absolute;
+      top: 8px;
+      right: 6px;
+      left: 12px;
+      height: 1px;
+      background: var(--border);
+      content: "";
+    }
+    .progress li:last-child::after { display: none; }
+    .progress li.is-ready, .progress li.is-complete { color: var(--text); }
+    .progress li.is-ready::before { border-color: var(--accent); }
+    .progress li.is-complete::before { border-color: var(--success); background: var(--success); }
+    .step {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 16px;
+      padding: 28px 0;
+      border-top: 1px solid var(--border);
+      scroll-margin-top: 16px;
+    }
+    .step-number {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 800;
+    }
+    .step-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .step-heading p { margin: 4px 0 0; font-size: 0.9rem; }
+    .step-state { flex: none; padding-top: 2px; color: var(--muted); font-size: 0.78rem; font-weight: 750; }
+    .step-content { max-width: 560px; transition: opacity 160ms ease; }
+    .step.is-complete .step-number { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+    .step.is-complete .step-state { color: var(--success); }
+    .step.is-locked .step-content { pointer-events: none; opacity: 0.4; }
+    .step.is-locked .step-state { color: var(--muted); }
+    .step .result { min-height: 1.25em; margin: 12px 0 0; font-size: 0.88rem; }
+    .panel { padding: 22px 0; border-top: 1px solid var(--border); }
+    .muted { color: var(--muted); }
     .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
     .hidden { display: none; }
     .user-code { font-size: 1.6rem; font-weight: 800; letter-spacing: 0; }
-    fieldset { border: 0; padding: 0; margin: 0; }
-    summary { margin: 16px 0; font-size: 1.2rem; font-weight: 700; cursor: pointer; }
-    .advanced-group + .advanced-group { margin-top: 28px; }
-    .inline-advanced { grid-column: 1 / -1; }
-    .inline-advanced summary { margin: 4px 0 12px; font-size: 1rem; }
-    .mode { display: flex; width: fit-content; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; overflow: hidden; }
+    .mode { display: flex; width: fit-content; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
     .mode label { display: block; padding: 9px 12px; cursor: pointer; }
-    .mode label + label { border-left: 1px solid color-mix(in srgb, CanvasText 24%, transparent); }
-    .mode input { width: auto; margin-right: 6px; }
-    .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
+    .mode label + label { border-left: 1px solid var(--border); }
+    .mode input { width: auto; min-height: 0; margin-right: 6px; }
+    .credential-fields { display: grid; gap: 14px; }
+    .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
     .settings label { display: flex; align-items: center; gap: 8px; }
-    .settings input[type="checkbox"] { width: auto; }
+    .settings input[type="checkbox"] { width: auto; min-height: 0; }
     .settings input[type="number"], .settings select { width: 100%; }
-    pre { max-height: 480px; overflow: auto; padding: 12px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
-    @media (max-width: 560px) { .settings { grid-template-columns: 1fr; } }
+    .inline-advanced { grid-column: 1 / -1; padding-top: 4px; }
+    .inline-advanced summary { margin-bottom: 12px; font-size: 0.9rem; }
+    .advanced-panel summary, .status-panel summary { padding: 4px 0; font-size: 0.95rem; }
+    .advanced-group { padding-top: 22px; }
+    .advanced-group + .advanced-group { margin-top: 24px; border-top: 1px solid var(--border); }
+    .activation-box { display: grid; max-width: 420px; gap: 12px; margin-top: 16px; }
+    .activation-box.hidden { display: none; }
+    .install-actions { margin-top: 16px; }
+    @media (max-width: 600px) {
+      main { margin-top: 24px; }
+      .page-header { margin-bottom: 24px; }
+      .progress { display: none; }
+      .step { grid-template-columns: 34px minmax(0, 1fr); gap: 12px; padding: 24px 0; }
+      .step-number { width: 30px; height: 30px; }
+      .step-heading { display: block; }
+      .step-state { display: block; margin-top: 4px; }
+      .settings { grid-template-columns: 1fr; }
+      dl { grid-template-columns: 1fr; gap: 2px; }
+      dd { margin-bottom: 8px; }
+      button, .button { width: 100%; }
+      .mode { width: 100%; }
+      .mode label { flex: 1; text-align: center; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>SYNCIO</h1>
-    <p>Self-hosted addon shell for deep Stremio and Trakt synchronization.</p>
+    <header class="page-header">
+      <div>
+        <h1>SYNCIO</h1>
+        <p class="brand-subtitle">Stremio ↔ Trakt</p>
+      </div>
+      <span class="version">v${SYNCIO_VERSION}</span>
+    </header>
 
-    <section class="panel">
-      <h2>Add-on Repository URL</h2>
-      <code>${escapeHtml(`${origin}/manifest.json`)}</code>
-    </section>
-
-    <section class="panel" id="setup-access">
-      <h2>Setup Access</h2>
+    <section class="access-card" id="setup-access">
+      <h2>Unlock setup</h2>
       <form id="setup-access-form">
         <label>
           Setup Token
           <input name="setupToken" type="password" autocomplete="current-password" required>
         </label>
-        <button type="submit">Unlock Setup</button>
+        <button type="submit">Continue</button>
       </form>
       <p><a href="https://github.com/giaaaacomo/SYNCIO/blob/main/docs/SELF_HOST_ONBOARDING.md#setup-token" target="_blank" rel="noreferrer">Forgot the token?</a></p>
       <p id="setup-access-result" class="result muted"></p>
     </section>
 
-    <section class="panel protected hidden">
-      <h2>Status</h2>
+    <ol class="progress protected hidden" aria-label="Setup progress">
+      <li id="progress-stremio">Stremio</li>
+      <li id="progress-trakt">Trakt</li>
+      <li id="progress-settings">Settings</li>
+      <li id="progress-sync">Sync</li>
+      <li id="progress-install">Install</li>
+    </ol>
+
+    <section class="step protected hidden" id="step-stremio">
+      <span class="step-number">1</span>
+      <div class="step-content">
+        <div class="step-heading">
+          <div>
+            <h2>Connect Stremio</h2>
+            <p>Use the account that already has Trakt connected.</p>
+          </div>
+          <span class="step-state" id="step-stremio-state">Not connected</span>
+        </div>
+        <form id="stremio-form">
+          <fieldset class="mode">
+            <label><input type="radio" name="mode" value="credentials" checked>Email</label>
+            <label><input type="radio" name="mode" value="auth-key">Auth Key</label>
+          </fieldset>
+          <div class="credential-fields" id="stremio-credentials">
+            <label>Email <input name="email" type="email" autocomplete="username"></label>
+            <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+          </div>
+          <div id="stremio-auth-key" class="hidden">
+            <label>Auth Key <input name="authKey" type="password" autocomplete="off"></label>
+          </div>
+          <button type="submit">Connect Stremio</button>
+        </form>
+        <p id="stremio-result" class="result muted"></p>
+      </div>
+    </section>
+
+    <section class="step protected hidden is-locked" id="step-trakt">
+      <span class="step-number">2</span>
+      <div class="step-content">
+        <div class="step-heading">
+          <div>
+            <h2>Confirm Trakt</h2>
+            <p>Match the Trakt account connected inside Stremio.</p>
+          </div>
+          <span class="step-state" id="step-trakt-state">Waiting for Stremio</span>
+        </div>
+        <form id="trakt-transport-form">
+          <label>
+            Trakt username
+            <input name="expectedUsername" autocomplete="username" required>
+          </label>
+          <button type="submit">Confirm Trakt account</button>
+        </form>
+        <p id="trakt-transport-result" class="result muted"></p>
+      </div>
+    </section>
+
+    <section class="step protected hidden is-locked" id="step-settings">
+      <span class="step-number">3</span>
+      <div class="step-content">
+        <div class="step-heading">
+          <div>
+            <h2>Choose what to sync</h2>
+            <p>Start with the recommended defaults.</p>
+          </div>
+          <span class="step-state" id="step-settings-state">Waiting for Trakt</span>
+        </div>
+        <form id="sync-settings-form">
+          <div class="settings">
+            <label><input name="watchedEnabled" type="checkbox"> Watched history</label>
+            <label><input name="ratingSyncEnabled" type="checkbox"> Ratings</label>
+            <label><input name="libraryWatchlistEnabled" type="checkbox"> Watchlist to Library</label>
+            <label>Like threshold <input name="likeThreshold" type="number" min="1" max="9"></label>
+            <label>Love threshold <input name="loveThreshold" type="number" min="2" max="10"></label>
+            <details class="inline-advanced">
+              <summary>Advanced sync settings</summary>
+              <div class="settings">
+                <label><input name="optionalCatalogsEnabled" type="checkbox"> Optional catalogs</label>
+                <label>Mode
+                  <select name="scope">
+                    <option value="account-preview">Preview only</option>
+                    <option value="test">Test account</option>
+                    <option value="account" disabled>Live account</option>
+                  </select>
+                </label>
+                <label>Interval
+                  <select name="syncIntervalMinutes">
+                    <option value="60">60 minutes</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
+          <button type="submit">Save and continue</button>
+        </form>
+        <p id="sync-settings-result" class="result muted"></p>
+      </div>
+    </section>
+
+    <section class="step protected hidden is-locked" id="step-sync">
+      <span class="step-number">4</span>
+      <div class="step-content">
+        <div class="step-heading">
+          <div>
+            <h2>Review and activate</h2>
+            <p>Preview is read-only. Nothing changes until you confirm.</p>
+          </div>
+          <span class="step-state" id="step-sync-state">Not checked</span>
+        </div>
+        <div class="actions">
+          <button id="sync-preview" type="button">Run preview</button>
+          <button id="sync-apply" class="hidden" type="button">Apply preview</button>
+        </div>
+        <div class="activation-box hidden" id="live-activation">
+          <label>Confirmation <input id="live-confirmation" autocomplete="off" placeholder="ENABLE SYNCIO"></label>
+          <button id="sync-activate" type="button">Activate hourly sync</button>
+        </div>
+        <p id="sync-preview-result" class="result muted"></p>
+        <pre id="sync-preview-output" class="hidden"></pre>
+      </div>
+    </section>
+
+    <section class="step protected hidden is-locked" id="step-install">
+      <span class="step-number">5</span>
+      <div class="step-content">
+        <div class="step-heading">
+          <div>
+            <h2>Install in Stremio</h2>
+            <p>Use this manifest for your self-hosted instance.</p>
+          </div>
+          <span class="step-state" id="step-install-state">Waiting for setup</span>
+        </div>
+        <code>${escapeHtml(`${origin}/manifest.json`)}</code>
+        <div class="actions install-actions">
+          <a class="button" href="${escapeHtml(`stremio://${origin.replace(/^https?:\/\//, "")}/manifest.json`)}">Open in Stremio</a>
+        </div>
+      </div>
+    </section>
+
+    <details class="panel status-panel protected hidden">
+      <summary>System status</summary>
       <dl>
         <dt>Storage</dt><dd id="storage-status">Loading</dd>
         <dt>Encryption</dt><dd id="encryption-status">Loading</dd>
@@ -940,43 +1253,9 @@ function configurePage(origin: string): string {
         <dt>Stremio</dt><dd id="stremio-status">Loading</dd>
         <dt>Last sync</dt><dd id="last-sync-status">No runs yet</dd>
       </dl>
-    </section>
+    </details>
 
-    <section class="panel protected hidden">
-      <h2>Stremio Account</h2>
-      <form id="stremio-form">
-        <fieldset class="mode">
-          <label><input type="radio" name="mode" value="credentials" checked>Email</label>
-          <label><input type="radio" name="mode" value="auth-key">Auth Key</label>
-        </fieldset>
-        <div id="stremio-credentials">
-          <label>Email <input name="email" type="email" autocomplete="username"></label>
-          <label>Password <input name="password" type="password" autocomplete="current-password"></label>
-        </div>
-        <div id="stremio-auth-key" class="hidden">
-          <label>Auth Key <input name="authKey" type="password" autocomplete="off"></label>
-        </div>
-        <button type="submit">Link Stremio</button>
-      </form>
-      <p id="stremio-result" class="result muted"></p>
-    </section>
-
-    <section class="panel protected hidden">
-      <h2>Trakt Transport</h2>
-      <p>Use the Trakt account already linked in Stremio. SYNCIO reads its access token for each run and does not store Trakt OAuth tokens in delegated mode.</p>
-      <form id="trakt-transport-form">
-        <label>
-          Expected Trakt Username
-          <input name="expectedUsername" autocomplete="username" required>
-        </label>
-        <div class="actions">
-          <button type="submit">Use Stremio Delegated</button>
-        </div>
-      </form>
-      <p id="trakt-transport-result" class="result muted"></p>
-    </section>
-
-    <details class="panel protected hidden" id="advanced-options">
+    <details class="panel advanced-panel protected hidden" id="advanced-options">
       <summary>Advanced options</summary>
 
       <div class="advanced-group">
@@ -989,21 +1268,12 @@ function configurePage(origin: string): string {
 
       <div class="advanced-group">
         <h3>Direct Trakt App</h3>
-        <p>Fallback transport using a separate Trakt application. Values are encrypted before they are stored in your D1 database.</p>
+        <p>Fallback transport using a separate Trakt application.</p>
         <p><a href="https://app.trakt.tv/settings/apps/api/new" target="_blank" rel="noreferrer">Create Trakt API app</a></p>
         <form id="trakt-app-form">
-          <label>
-            Client ID
-            <input name="clientId" autocomplete="off" required>
-          </label>
-          <label>
-            Client Secret
-            <input name="clientSecret" type="password" autocomplete="off" required>
-          </label>
-          <label>
-            Redirect URI
-            <input name="redirectUri" type="url" value="${escapeHtml(`${origin}/oauth/trakt/callback`)}" required>
-          </label>
+          <label>Client ID <input name="clientId" autocomplete="off" required></label>
+          <label>Client Secret <input name="clientSecret" type="password" autocomplete="off" required></label>
+          <label>Redirect URI <input name="redirectUri" type="url" value="${escapeHtml(`${origin}/oauth/trakt/callback`)}" required></label>
           <button type="submit">Save Trakt App</button>
         </form>
         <p id="trakt-app-result" class="result muted"></p>
@@ -1021,51 +1291,6 @@ function configurePage(origin: string): string {
         <p id="trakt-link-result" class="result muted"></p>
       </div>
     </details>
-
-    <section class="panel protected hidden">
-      <h2>Sync Settings</h2>
-      <form id="sync-settings-form">
-        <div class="settings">
-          <label><input name="watchedEnabled" type="checkbox"> Watched history</label>
-          <label><input name="ratingSyncEnabled" type="checkbox"> Ratings</label>
-          <label><input name="libraryWatchlistEnabled" type="checkbox"> Watchlist to Library</label>
-          <label>Like threshold <input name="likeThreshold" type="number" min="1" max="9"></label>
-          <label>Love threshold <input name="loveThreshold" type="number" min="2" max="10"></label>
-          <details class="inline-advanced">
-            <summary>Advanced sync settings</summary>
-            <div class="settings">
-              <label><input name="optionalCatalogsEnabled" type="checkbox"> Optional catalogs</label>
-              <label>Mode
-                <select name="scope">
-                  <option value="account-preview">Preview only</option>
-                  <option value="test">Test account</option>
-                  <option value="account" disabled>Live account (activate below)</option>
-                </select>
-              </label>
-              <label>Interval
-                <select name="syncIntervalMinutes">
-                  <option value="60">60 minutes</option>
-                </select>
-              </label>
-            </div>
-          </details>
-        </div>
-        <button type="submit">Save Settings</button>
-      </form>
-      <p id="sync-settings-result" class="result muted"></p>
-    </section>
-
-    <section class="panel protected hidden">
-      <h2>Sync Preview</h2>
-      <button id="sync-preview" type="button">Run Read-only Preview</button>
-      <button id="sync-apply" class="hidden" type="button">Apply Preview</button>
-      <div id="live-activation" class="hidden">
-        <label>One-time hourly-write confirmation <input id="live-confirmation" autocomplete="off" placeholder="ENABLE SYNCIO"></label>
-        <button id="sync-activate" type="button">Activate Live Sync</button>
-      </div>
-      <p id="sync-preview-result" class="result muted"></p>
-      <pre id="sync-preview-output" class="hidden"></pre>
-    </section>
   </main>
   <script>
     const byId = (id) => document.getElementById(id);
@@ -1074,6 +1299,59 @@ function configurePage(origin: string): string {
     let pollTimer;
     let previewFingerprint = "";
     let currentScope = "account-preview";
+    const flowState = {
+      stremio: false,
+      trakt: false,
+      settings: false,
+      previewed: false,
+      live: false
+    };
+
+    function setFlowStep(name, { complete = false, locked = false, label }) {
+      const step = byId("step-" + name);
+      const progress = byId("progress-" + name);
+      step.classList.toggle("is-complete", complete);
+      step.classList.toggle("is-locked", locked);
+      progress.classList.toggle("is-complete", complete);
+      progress.classList.toggle("is-ready", !complete && !locked);
+      byId("step-" + name + "-state").textContent = label;
+    }
+
+    function updateFlow() {
+      setFlowStep("stremio", {
+        complete: flowState.stremio,
+        label: flowState.stremio ? "Connected" : "Not connected"
+      });
+      setFlowStep("trakt", {
+        complete: flowState.trakt,
+        locked: !flowState.stremio,
+        label: flowState.trakt ? "Verified" : (flowState.stremio ? "Ready" : "Waiting for Stremio")
+      });
+      setFlowStep("settings", {
+        complete: flowState.trakt && flowState.settings,
+        locked: !flowState.trakt,
+        label: flowState.trakt && flowState.settings ? "Ready" : "Waiting for Trakt"
+      });
+      const syncUnlocked = flowState.trakt && flowState.settings;
+      setFlowStep("sync", {
+        complete: flowState.live,
+        locked: !syncUnlocked,
+        label: flowState.live ? "Hourly sync active" : (flowState.previewed ? "Preview ready" : (syncUnlocked ? "Ready" : "Waiting for settings"))
+      });
+      const installUnlocked = flowState.live || flowState.previewed;
+      setFlowStep("install", {
+        complete: flowState.live,
+        locked: !installUnlocked,
+        label: flowState.live ? "Ready to install" : (flowState.previewed ? "Available" : "Waiting for sync check")
+      });
+    }
+
+    function continueTo(stepName) {
+      const step = byId("step-" + stepName);
+      if (!step.classList.contains("is-locked")) {
+        step.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
 
     async function setupApi(path, options = {}) {
       const headers = new Headers(options.headers || {});
@@ -1093,12 +1371,14 @@ function configurePage(origin: string): string {
     function unlockSetup() {
       byId("setup-access").classList.add("hidden");
       document.querySelectorAll(".protected").forEach((element) => element.classList.remove("hidden"));
+      updateFlow();
     }
 
     function lockSetup(message = "") {
       clearTimeout(pollTimer);
       sessionStorage.removeItem(tokenKey);
       setupToken = "";
+      Object.assign(flowState, { stremio: false, trakt: false, settings: false, previewed: false, live: false });
       byId("setup-access").classList.remove("hidden");
       document.querySelectorAll(".protected").forEach((element) => element.classList.add("hidden"));
       byId("setup-access-result").textContent = message;
@@ -1128,6 +1408,8 @@ function configurePage(origin: string): string {
       if (!response.ok) throw new Error(body.error || "Status failed");
       const connections = body.connections || {};
       const transport = connections.traktTransport || {};
+      flowState.stremio = connections.stremio?.auth === "configured";
+      flowState.trakt = Boolean(transport.ready);
       byId("storage-status").textContent = body.storage?.d1 + ", " + (body.storage?.reachable ? "reachable" : "not reachable");
       byId("encryption-status").textContent = body.encryption;
       byId("trakt-transport-status").textContent =
@@ -1150,6 +1432,7 @@ function configurePage(origin: string): string {
         ? latestRun.status + ", " + latestRun.mode + ", " + latestRun.plannedChanges + " planned, " + latestRun.finishedAt
         : "No runs yet";
       renderAuthorization(body.traktDevice);
+      updateFlow();
     }
 
     async function refreshSettings() {
@@ -1163,7 +1446,10 @@ function configurePage(origin: string): string {
         form.elements[name].value = String(body[name]);
       }
       currentScope = String(body.scope || "account-preview");
+      flowState.settings = true;
+      flowState.live = body.liveSync === "active";
       form.elements.scope.querySelector('option[value="account"]').disabled = currentScope !== "account";
+      updateFlow();
     }
 
     function renderAuthorization(authorization) {
@@ -1263,6 +1549,7 @@ function configurePage(origin: string): string {
       }
       result.textContent = "Stremio linked as " + (body.connections?.stremio?.userId || "verified account") + ".";
       await refreshStatus();
+      continueTo("trakt");
     });
 
     byId("trakt-transport-form").addEventListener("submit", async (event) => {
@@ -1303,6 +1590,7 @@ function configurePage(origin: string): string {
       byId("sync-apply").classList.add("hidden");
       byId("live-activation").classList.add("hidden");
       await refreshStatus();
+      if (payload.mode === "stremio-delegated") continueTo("settings");
     }
 
     byId("sync-settings-form").addEventListener("submit", async (event) => {
@@ -1330,9 +1618,12 @@ function configurePage(origin: string): string {
       result.textContent = response.ok ? "Settings saved." : (body.error || "Save failed");
       if (response.ok) {
         currentScope = String(body.scope || payload.scope);
+        flowState.settings = true;
         previewFingerprint = "";
         byId("sync-apply").classList.add("hidden");
         byId("live-activation").classList.add("hidden");
+        updateFlow();
+        continueTo("sync");
       }
     });
 
@@ -1355,6 +1646,8 @@ function configurePage(origin: string): string {
       output.textContent = JSON.stringify(body, null, 2);
       output.classList.remove("hidden");
       previewFingerprint = body.operations.fingerprint || "";
+      flowState.previewed = true;
+      updateFlow();
       byId("sync-apply").classList.toggle(
         "hidden",
         !previewFingerprint || body.operations.total === 0 || currentScope === "account-preview"
@@ -1407,6 +1700,7 @@ function configurePage(origin: string): string {
       byId("live-activation").classList.add("hidden");
       byId("sync-apply").classList.add("hidden");
       await Promise.all([refreshSettings(), refreshStatus()]);
+      continueTo("install");
     });
 
     function schedulePoll(seconds) {

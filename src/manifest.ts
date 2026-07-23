@@ -1,4 +1,4 @@
-export const SYNCIO_VERSION = "0.2.1";
+export const SYNCIO_VERSION = "0.2.2";
 
 export function manifest(origin: string) {
   return {

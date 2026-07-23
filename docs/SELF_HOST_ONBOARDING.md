@@ -4,7 +4,7 @@ SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
 
 Each user deploys their own Cloudflare Worker + D1 database. By default, SYNCIO reuses the Trakt authorization already linked to the user's Stremio account. The runtime that processes credentials and sync state belongs to the user.
 
-Version 0.2.1 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
+Version 0.2.2 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
 
 ## Intended User Flow
 
@@ -19,6 +19,8 @@ Version 0.2.1 is a technical preview. Begin with isolated test accounts and insp
 9. Run a read-only full-account preview and confirm both account guards.
 10. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
 11. Install the generated manifest in Stremio.
+
+The configure page presents these actions as five ordered steps: Stremio, Trakt, sync settings, preview/activation, and installation. Later steps remain inactive until their prerequisites are ready. System diagnostics and the Direct OAuth fallback stay collapsed below the main flow.
 
 Delegated mode reads the current Trakt access grant from Stremio at the beginning of every run. It uses Stremio's public Trakt client identity for Trakt requests, keeps the access token only in memory, ignores the refresh token, and fails closed if the grant is absent, expired, or belongs to another account. Reconnect Trakt inside Stremio if that guard reports an expired grant.
 

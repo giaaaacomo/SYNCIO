@@ -6,7 +6,7 @@
 SYNCIO is a self-hosted TypeScript project for deep Stremio <-> Trakt synchronization. Each installation runs in the user's own Cloudflare account and stores its encrypted Stremio credential and sync state in its own D1 database.
 
 > [!IMPORTANT]
-> Version 0.2.1 is a technical preview. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. The default delegated Trakt transport relies on Stremio account behavior that is not a public addon API. Removals are intentionally unsupported.
+> Version 0.2.2 is a technical preview. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. The default delegated Trakt transport relies on Stremio account behavior that is not a public addon API. Removals are intentionally unsupported.
 
 ## Quick Self-Hosted Deploy
 
