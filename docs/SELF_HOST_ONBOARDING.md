@@ -24,6 +24,26 @@ Version 0.1.0 is a technical preview. Begin with isolated test accounts and insp
 
 Each run applies at most 250 deterministic differences. Larger first imports converge over later hourly runs. Returning the mode to Preview only disarms live scheduling immediately. History removals remain disabled.
 
+## Setup Token
+
+`SYNCIO_SETUP_TOKEN` is the administrative password for the configure, preview, activation, and manual sync APIs. It is separate from the encryption key and from the Stremio and Trakt credentials.
+
+Cloudflare secrets cannot be read after they are saved. If the setup token is lost, replace it rather than trying to recover it:
+
+1. Open the `syncio` Worker in the Cloudflare dashboard.
+2. Open **Settings**, then **Variables and Secrets**.
+3. Edit `SYNCIO_SETUP_TOKEN` and enter a new long random value.
+4. Deploy the secret change and use the new value on `/configure`.
+
+With Wrangler, generate and replace it with:
+
+```sh
+openssl rand -base64 48
+wrangler secret put SYNCIO_SETUP_TOKEN
+```
+
+Store the new value in a password manager. Replacing it invalidates setup access in existing browser sessions but does not modify D1 data or linked account credentials.
+
 ## Privacy Boundary
 
 With this model, SYNCIO maintainers do not receive, store, or process user tokens on infrastructure controlled by us.

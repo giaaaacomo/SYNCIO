@@ -753,6 +753,7 @@ function configurePage(origin: string): string {
         </label>
         <button type="submit">Unlock Setup</button>
       </form>
+      <p><a href="https://github.com/giaaaacomo/SYNCIO/blob/main/docs/SELF_HOST_ONBOARDING.md#setup-token" target="_blank" rel="noreferrer">Forgot the token?</a></p>
       <p id="setup-access-result" class="result muted"></p>
     </section>
 
