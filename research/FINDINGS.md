@@ -301,6 +301,9 @@ Status: live probes started on 2026-07-17 with a dedicated Stremio/Trakt test ac
 - Apply and scheduler independently require the persisted activation record in addition to `scope=account`.
 - PASS: staging activation on the isolated account applied zero changes, stored a 64-character fingerprint, and switched to armed account scope.
 - PASS: the first manual Live run planned and applied zero changes, completed without error, and was persisted as succeeded.
+- PASS: an existing Matrix rating mismatch was left pending before the next hourly trigger: Trakt `8/10` mapped to Stremio `liked`, while Stremio still reported `loved`.
+- PASS: the 04:00 local hourly run was persisted as `scheduled` and `succeeded` with exactly one planned change, without a manual sync invocation.
+- PASS: direct post-cron verification reported Matrix as `liked`; the following seven hourly runs succeeded with zero planned changes, confirming stable idempotence.
 - PASS: GitHub CI runs all Worker and research tests, both typechecks, and a Wrangler deployment dry-run.
 
 ## Open Questions
