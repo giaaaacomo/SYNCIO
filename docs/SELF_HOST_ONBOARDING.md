@@ -4,7 +4,7 @@ SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
 
 Each user deploys their own Cloudflare Worker + D1 database. By default, SYNCIO reuses the Trakt authorization already linked to the user's Stremio account. The runtime that processes credentials and sync state belongs to the user.
 
-Version 0.2.4 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
+Version 0.3.0 is a technical beta. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
 
 ## Intended User Flow
 
@@ -75,3 +75,19 @@ The realistic target is not literally zero clicks because Cloudflare and Stremio
 Every setup page must show redacted readiness only, never raw tokens.
 
 The setup token is kept in browser `sessionStorage`, is sent only as a bearer header to the user's own Worker, and is never written to D1. Closing the browser tab clears that browser session. The encryption key never enters the browser.
+
+## Connection Health And Run History
+
+The collapsed **System status** section can verify the current Stremio and Trakt identities on demand. It reports the delegated Trakt grant expiry but never returns the access token. Every delegated and direct sync run repeats the appropriate account guard before reading or writing data.
+
+The same section lists the eight most recent scheduled or manual runs, including status, timestamp, planned operation count, and a bounded error message when a run fails.
+
+## Data Lifecycle
+
+The collapsed **Data and privacy** section provides three protected actions:
+
+- **Export data** downloads settings, redacted connection metadata, recent runs, the idempotency ledger, cursors, and conflicts. Credentials and encrypted secret values are deliberately excluded.
+- **Disconnect accounts** first returns settings to Preview only, disarming live sync, then deletes stored Stremio/Trakt connection material while preserving settings and run history.
+- **Delete all data** requires the exact `DELETE SYNCIO DATA` confirmation and removes every SYNCIO row from the user's D1 database.
+
+These actions affect only SYNCIO's D1 state. They do not delete Stremio or Trakt accounts and do not remove history from either service.

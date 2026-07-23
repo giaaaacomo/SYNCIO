@@ -3,6 +3,11 @@ import { decryptSecret, encryptSecret } from "./crypto/secrets.js";
 import { manifest, SYNCIO_VERSION } from "./manifest.js";
 import { isD1Database, readStorageStatus } from "./storage/d1.js";
 import {
+  deleteSyncioUserData,
+  disconnectSyncioAccounts,
+  exportSyncioUserData
+} from "./storage/repositories/data-lifecycle.js";
+import {
   getConnection,
   upsertConnection,
   type ConnectionRecord,
@@ -14,7 +19,7 @@ import {
   upsertTraktDeviceSession,
   type TraktDeviceSession
 } from "./storage/repositories/trakt-device-sessions.js";
-import { getLatestSyncRun } from "./storage/repositories/sync-runs.js";
+import { getLatestSyncRun, getRecentSyncRuns } from "./storage/repositories/sync-runs.js";
 import {
   ensureUser,
   getHostedSyncSettings,
@@ -30,6 +35,7 @@ import {
   StremioApiError
 } from "./stremio/account.js";
 import { activateWorkerSync, applyWorkerSync } from "./sync/apply.js";
+import { loadSyncCredentials } from "./sync/credentials.js";
 import { previewWorkerSync } from "./sync/preview.js";
 import { runScheduledSync } from "./sync/scheduled.js";
 import {
@@ -54,7 +60,7 @@ const SELF_HOST_USER_ID = "self-host";
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, PUT, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
   "access-control-allow-headers": "authorization, content-type"
 };
 
@@ -120,6 +126,47 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
 
   if (url.pathname === "/api/setup/status" && request.method === "GET") {
     return json(await setupStatus(env));
+  }
+
+  if (url.pathname === "/api/setup/health" && request.method === "GET") {
+    return verifyConnectionHealth(env, externalFetch);
+  }
+
+  if (url.pathname === "/api/setup/export" && request.method === "GET") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    const exported = await exportSyncioUserData(env.SYNCIO_DB, SELF_HOST_USER_ID);
+    return json(exported, 200, {
+      "cache-control": "no-store",
+      "content-disposition": `attachment; filename="syncio-export-${exported.exportedAt.slice(0, 10)}.json"`
+    });
+  }
+
+  if (url.pathname === "/api/setup/disconnect" && request.method === "POST") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    try {
+      const body = objectValue(await request.json(), "body");
+      if (stringValue(body.confirmation, "confirmation") !== "DISCONNECT SYNCIO") {
+        return json({ error: "Disconnect confirmation did not match." }, 400);
+      }
+      await disconnectSyncioAccounts(env.SYNCIO_DB, SELF_HOST_USER_ID);
+      return json({ ok: true, disconnected: true });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : "Disconnect failed." }, 400);
+    }
+  }
+
+  if (url.pathname === "/api/setup/data" && request.method === "DELETE") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    try {
+      const body = objectValue(await request.json(), "body");
+      if (stringValue(body.confirmation, "confirmation") !== "DELETE SYNCIO DATA") {
+        return json({ error: "Deletion confirmation did not match." }, 400);
+      }
+      await deleteSyncioUserData(env.SYNCIO_DB, SELF_HOST_USER_ID);
+      return json({ ok: true, deleted: true });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : "Deletion failed." }, 400);
+    }
   }
 
   if (url.pathname === "/api/setup/trakt-app" && request.method === "POST") {
@@ -288,6 +335,9 @@ async function setupStatus(env: Env) {
   const latestRun = storage.reachable && isD1Database(env.SYNCIO_DB)
     ? await getLatestSyncRun(env.SYNCIO_DB, SELF_HOST_USER_ID).catch(() => null)
     : null;
+  const recentRuns = storage.reachable && isD1Database(env.SYNCIO_DB)
+    ? await getRecentSyncRuns(env.SYNCIO_DB, SELF_HOST_USER_ID).catch(() => [])
+    : [];
   return {
     install: {
       mode: "self-host",
@@ -300,8 +350,39 @@ async function setupStatus(env: Env) {
     encryption: env.SYNCIO_ENCRYPTION_KEY ? "configured" : "missing",
     connections: summarizeConnection(connection),
     traktDevice: summarizeDeviceSession(deviceSession),
-    latestRun
+    latestRun,
+    recentRuns
   };
+}
+
+async function verifyConnectionHealth(env: Env, externalFetch: typeof fetch): Promise<Response> {
+  if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+  if (!env.SYNCIO_ENCRYPTION_KEY) return json({ error: "SYNCIO_ENCRYPTION_KEY is not configured." }, 503);
+  try {
+    const credentials = await loadSyncCredentials({
+      db: env.SYNCIO_DB,
+      userId: SELF_HOST_USER_ID,
+      encryptionKey: env.SYNCIO_ENCRYPTION_KEY,
+      fetcher: externalFetch,
+      traktApiBase: env.TRAKT_API_BASE,
+      stremioApiBase: env.STREMIO_API_BASE,
+      stremioTraktClientId: env.STREMIO_TRAKT_CLIENT_ID
+    });
+    return json({
+      ok: true,
+      checkedAt: new Date().toISOString(),
+      authMode: credentials.trakt.authMode,
+      stremioUserId: redactIdentifier(credentials.stremio.userId),
+      traktUsername: credentials.trakt.username,
+      traktGrantExpiresAt: credentials.trakt.expiresAt,
+      traktGrantExpiresInSeconds: Math.max(
+        0,
+        Math.floor((Date.parse(credentials.trakt.expiresAt) - Date.now()) / 1000)
+      )
+    }, 200, { "cache-control": "no-store" });
+  } catch (error) {
+    return syncErrorResponse(error, "Connection verification failed.", 409);
+  }
 }
 
 async function saveTraktAppCredentials(request: Request, env: Env): Promise<Response> {
@@ -956,6 +1037,8 @@ function configurePage(origin: string): string {
     button:hover, .button:hover { background: var(--accent-strong); }
     button.secondary { border: 1px solid var(--border); background: transparent; color: var(--text); }
     button.secondary:hover { border-color: var(--accent); background: var(--accent-soft); }
+    button.danger { background: #b42318; color: #ffffff; }
+    button.danger:hover { background: #912018; }
     button:disabled { cursor: wait; opacity: 0.55; }
     fieldset { border: 0; padding: 0; margin: 0; }
     summary { cursor: pointer; font-weight: 750; }
@@ -1084,11 +1167,30 @@ function configurePage(origin: string): string {
     .inline-advanced { grid-column: 1 / -1; padding-top: 4px; }
     .inline-advanced summary { margin-bottom: 12px; font-size: 0.9rem; }
     .advanced-panel summary, .status-panel summary { padding: 4px 0; font-size: 0.95rem; }
+    .status-actions { margin-top: 18px; }
+    .run-history { display: grid; gap: 0; margin: 14px 0 0; padding: 0; list-style: none; }
+    .run-history li {
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) auto;
+      gap: 4px 16px;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .run-history strong { font-size: 0.82rem; }
+    .run-history span, .run-history time { color: var(--muted); }
+    .run-error { grid-column: 1 / -1; color: var(--warning) !important; overflow-wrap: anywhere; }
     .advanced-group { padding-top: 22px; }
     .advanced-group + .advanced-group { margin-top: 24px; border-top: 1px solid var(--border); }
     .activation-box { display: grid; max-width: 420px; gap: 12px; margin-top: 16px; }
     .activation-box.hidden { display: none; }
     .install-actions { margin-top: 16px; }
+    .support { padding-top: 24px; color: var(--muted); font-size: 0.82rem; text-align: center; }
+    .support p { margin-bottom: 8px; }
+    .support-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; }
+    .privacy-actions { margin-top: 18px; }
+    .danger-zone { max-width: 460px; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .danger-zone label { margin: 14px 0; }
     @media (max-width: 600px) {
       main { margin-top: 24px; }
       .page-header { margin-bottom: 24px; }
@@ -1290,6 +1392,14 @@ function configurePage(origin: string): string {
         <dt>Stremio</dt><dd id="stremio-status">Loading</dd>
         <dt>Last sync</dt><dd id="last-sync-status">No runs yet</dd>
       </dl>
+      <div class="actions status-actions">
+        <button class="secondary" id="connection-health" type="button">Verify connections</button>
+      </div>
+      <p class="result muted" id="connection-health-result"></p>
+      <h3>Recent syncs</h3>
+      <ol class="run-history" id="run-history">
+        <li><span>No runs yet</span></li>
+      </ol>
     </details>
 
     <details class="panel advanced-panel protected hidden" id="advanced-options">
@@ -1328,6 +1438,33 @@ function configurePage(origin: string): string {
         <p id="trakt-link-result" class="result muted"></p>
       </div>
     </details>
+
+    <details class="panel advanced-panel protected hidden" id="data-privacy">
+      <summary>Data and privacy</summary>
+      <p>Exported files omit credentials and encrypted secret values.</p>
+      <div class="actions privacy-actions">
+        <button class="secondary" id="data-export" type="button">Export data</button>
+        <button class="secondary" id="data-disconnect" type="button">Disconnect accounts</button>
+      </div>
+      <div class="danger-zone">
+        <h3>Delete all SYNCIO data</h3>
+        <label>
+          Confirmation
+          <input id="data-delete-confirmation" autocomplete="off" placeholder="DELETE SYNCIO DATA">
+        </label>
+        <button class="danger" id="data-delete" type="button">Delete all data</button>
+      </div>
+      <p class="result muted" id="data-privacy-result"></p>
+    </details>
+
+    <footer class="support">
+      <p>Support SYNCIO</p>
+      <nav class="support-links" aria-label="Support SYNCIO">
+        <a href="https://github.com/sponsors/giaaaacomo" target="_blank" rel="noreferrer">GitHub Sponsors</a>
+        <a href="https://ko-fi.com/giaaaacomo" target="_blank" rel="noreferrer">Ko-fi</a>
+        <a href="https://www.paypal.com/paypalme/giaaaacomo" target="_blank" rel="noreferrer">PayPal</a>
+      </nav>
+    </footer>
   </main>
   <script>
     const byId = (id) => document.getElementById(id);
@@ -1440,6 +1577,39 @@ function configurePage(origin: string): string {
       return true;
     }
 
+    function renderRunHistory(runs) {
+      const history = byId("run-history");
+      history.replaceChildren();
+      if (!Array.isArray(runs) || runs.length === 0) {
+        const empty = document.createElement("li");
+        const label = document.createElement("span");
+        label.textContent = "No runs yet";
+        empty.append(label);
+        history.append(empty);
+        return;
+      }
+      for (const run of runs) {
+        const item = document.createElement("li");
+        const title = document.createElement("strong");
+        title.textContent = String(run.status || "unknown") + " · " + String(run.mode || "unknown");
+        const timestamp = document.createElement("time");
+        timestamp.dateTime = String(run.finishedAt || run.startedAt || "");
+        timestamp.textContent = run.finishedAt || run.startedAt
+          ? new Date(run.finishedAt || run.startedAt).toLocaleString()
+          : "Unknown time";
+        const changes = document.createElement("span");
+        changes.textContent = String(run.plannedChanges || 0) + " planned changes";
+        item.append(title, timestamp, changes);
+        if (run.errorMessage) {
+          const error = document.createElement("span");
+          error.className = "run-error";
+          error.textContent = String(run.errorMessage);
+          item.append(error);
+        }
+        history.append(item);
+      }
+    }
+
     async function refreshStatus() {
       const { response, body } = await setupApi("/api/setup/status");
       if (!response.ok) throw new Error(body.error || "Status failed");
@@ -1468,6 +1638,7 @@ function configurePage(origin: string): string {
       byId("last-sync-status").textContent = latestRun
         ? latestRun.status + ", " + latestRun.mode + ", " + latestRun.plannedChanges + " planned, " + latestRun.finishedAt
         : "No runs yet";
+      renderRunHistory(body.recentRuns || []);
       renderAuthorization(body.traktDevice);
       updateFlow();
     }
@@ -1511,6 +1682,29 @@ function configurePage(origin: string): string {
         form.reset();
       } catch (error) {
         lockSetup(error instanceof Error ? error.message : String(error));
+      }
+    });
+
+    byId("connection-health").addEventListener("click", async () => {
+      const button = byId("connection-health");
+      const result = byId("connection-health-result");
+      let rateLimited = false;
+      button.disabled = true;
+      result.textContent = "Verifying Stremio and Trakt";
+      try {
+        const { response, body } = await setupApi("/api/setup/health");
+        if (!response.ok) {
+          rateLimited = showRateLimitCountdown(button, result, body);
+          if (!rateLimited) {
+            result.textContent = body.error || "Connection verification failed";
+          }
+          return;
+        }
+        const expiry = new Date(body.traktGrantExpiresAt);
+        result.textContent = "Verified " + body.traktUsername + " via " + body.authMode +
+          ". Grant expires " + expiry.toLocaleString() + ".";
+      } finally {
+        if (!rateLimited) button.disabled = false;
       }
     });
 
@@ -1675,6 +1869,77 @@ function configurePage(origin: string): string {
         updateFlow();
         continueTo("sync");
       }
+    });
+
+    byId("data-export").addEventListener("click", async () => {
+      const result = byId("data-privacy-result");
+      result.textContent = "Preparing export";
+      const { response, body } = await setupApi("/api/setup/export");
+      if (!response.ok) {
+        result.textContent = body.error || "Export failed";
+        return;
+      }
+      const blob = new Blob([JSON.stringify(body, null, 2) + "\\n"], { type: "application/json" });
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = "syncio-export-" + new Date().toISOString().slice(0, 10) + ".json";
+      link.click();
+      URL.revokeObjectURL(href);
+      result.textContent = "Export downloaded. Credentials were excluded.";
+    });
+
+    byId("data-disconnect").addEventListener("click", async () => {
+      if (!window.confirm("Disconnect Stremio and Trakt and stop live synchronization? Stored run history will remain.")) {
+        return;
+      }
+      const result = byId("data-privacy-result");
+      result.textContent = "Disconnecting accounts";
+      const { response, body } = await setupApi("/api/setup/disconnect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation: "DISCONNECT SYNCIO" })
+      });
+      if (!response.ok) {
+        result.textContent = body.error || "Disconnect failed";
+        return;
+      }
+      Object.assign(flowState, { stremio: false, trakt: false, previewed: false, live: false });
+      result.textContent = "Accounts disconnected. Live synchronization is inactive.";
+      await Promise.all([refreshStatus(), refreshSettings()]);
+      continueTo("stremio");
+    });
+
+    byId("data-delete").addEventListener("click", async () => {
+      const confirmation = byId("data-delete-confirmation").value;
+      const result = byId("data-privacy-result");
+      if (confirmation !== "DELETE SYNCIO DATA") {
+        result.textContent = "Type DELETE SYNCIO DATA to confirm.";
+        return;
+      }
+      if (!window.confirm("Permanently delete all SYNCIO data from this D1 database?")) return;
+      result.textContent = "Deleting SYNCIO data";
+      const { response, body } = await setupApi("/api/setup/data", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation })
+      });
+      if (!response.ok) {
+        result.textContent = body.error || "Deletion failed";
+        return;
+      }
+      byId("data-delete-confirmation").value = "";
+      previewFingerprint = "";
+      Object.assign(flowState, {
+        stremio: false,
+        trakt: false,
+        settings: false,
+        previewed: false,
+        live: false
+      });
+      result.textContent = "All SYNCIO data deleted.";
+      await Promise.all([refreshStatus(), refreshSettings()]);
+      continueTo("stremio");
     });
 
     byId("sync-preview").addEventListener("click", async () => {

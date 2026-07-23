@@ -73,6 +73,17 @@ async function loadDelegatedCredentials(
   }
   const clientId = (input.stremioTraktClientId ?? DEFAULT_STREMIO_TRAKT_CLIENT_ID).trim();
   if (!clientId) throw new Error("Stremio Trakt client id is not configured.");
+  const identity = await fetchTraktIdentity(
+    clientId,
+    authorization.accessToken,
+    input.fetcher,
+    input.traktApiBase
+  );
+  if (identity.username !== connection.traktUsername) {
+    throw new Error(
+      `Delegated Trakt account guard failed: received ${identity.username}, expected ${connection.traktUsername}.`
+    );
+  }
   return credentialResult(
     stremioAuth,
     connection,
@@ -108,6 +119,10 @@ async function loadDirectCredentials(
   ]);
   const expiresAt = required.traktExpiresAt!;
   if (Date.parse(expiresAt) > (input.now ?? Date.now()) + REFRESH_MARGIN_MS) {
+    const identity = await fetchTraktIdentity(clientId, accessToken, input.fetcher, input.traktApiBase);
+    if (identity.username !== connection.traktUsername) {
+      throw new Error("Direct Trakt account guard failed while loading credentials.");
+    }
     return credentialResult(stremioAuth, connection, "direct-oauth", clientId, accessToken, expiresAt);
   }
 

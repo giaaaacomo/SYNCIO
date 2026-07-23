@@ -1,11 +1,25 @@
 {
   "name": "syncio",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.14.0",
   "description": "Self-hosted deep synchronization between Stremio and Trakt.",
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/giaaaacomo"
+    },
+    {
+      "type": "individual",
+      "url": "https://ko-fi.com/giaaaacomo"
+    },
+    {
+      "type": "individual",
+      "url": "https://www.paypal.com/paypalme/giaaaacomo"
+    }
+  ],
   "scripts": {
     "build": "tsc --outDir dist",
     "probe:stremio:auth": "tsc --outDir dist && node dist/stremio-auth.js",

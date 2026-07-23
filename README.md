@@ -6,7 +6,7 @@
 SYNCIO is a self-hosted TypeScript project for deep Stremio <-> Trakt synchronization. Each installation runs in the user's own Cloudflare account and stores its encrypted Stremio credential and sync state in its own D1 database.
 
 > [!IMPORTANT]
-> Version 0.2.4 is a technical preview. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. The default delegated Trakt transport relies on Stremio account behavior that is not a public addon API. Removals are intentionally unsupported.
+> Version 0.3.0 is a technical beta. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. The default delegated Trakt transport relies on Stremio account behavior that is not a public addon API. Removals are intentionally unsupported.
 
 ## Quick Self-Hosted Deploy
 
@@ -19,6 +19,10 @@ SYNCIO is a self-hosted TypeScript project for deep Stremio <-> Trakt synchroniz
 5. Run a read-only preview, install the displayed Stremio manifest, and activate hourly synchronization only after reviewing the exact changes.
 
 The Cloudflare account, fork, Worker, D1 database, secrets, and account tokens belong only to the user. SYNCIO has no maintainer-operated backend. See [the full self-host onboarding guide](docs/SELF_HOST_ONBOARDING.md) for recovery and privacy details.
+
+## Support
+
+If SYNCIO is useful to you, you can support its development through [GitHub Sponsors](https://github.com/sponsors/giaaaacomo), [Ko-fi](https://ko-fi.com/giaaaacomo), or [PayPal](https://www.paypal.com/paypalme/giaaaacomo). GitHub also reads these options from the repository's standard `.github/FUNDING.yml` file.
 
 This repository started with **Milestone 0** research probes that verify undocumented or weakly documented behavior. It now contains a self-hosted Cloudflare Worker with guarded watched reconciliation, rating mapping, additive Library/Watchlist synchronization, D1 state, and hourly scheduling.
 
@@ -156,9 +160,15 @@ The Worker configure page now supports the self-host onboarding sequence:
 - delegated mode retrieves Stremio's current Trakt access grant for each run, verifies the expected Trakt username, and never persists Trakt access or refresh tokens;
 - switching to delegated mode deletes any previously stored direct Trakt OAuth tokens;
 - optional direct mode encrypts a user-owned Trakt client id, client secret, access token, and refresh token in D1;
-- sync settings default to account preview, with removals disabled.
+- sync settings default to account preview, with removals disabled;
+- connection health verifies both account guards and reports only the delegated grant expiry, never the grant itself;
+- recent scheduled/manual runs remain visible with bounded failure details;
+- the privacy export omits credentials and ciphertext, while protected disconnect and full-delete actions disarm live sync first.
 
-The relevant protected routes are `GET /api/setup/status`, `GET|PUT /api/setup/settings`, `POST /api/setup/stremio`, `POST /api/setup/trakt-mode`, `POST /api/setup/trakt-app`, `POST /api/setup/trakt/start`, and `POST /api/setup/trakt/poll`.
+The relevant protected routes are `GET /api/setup/status`, `GET /api/setup/health`, `GET /api/setup/export`,
+`GET|PUT /api/setup/settings`, `POST /api/setup/stremio`, `POST /api/setup/trakt-mode`,
+`POST /api/setup/trakt-app`, `POST /api/setup/trakt/start`, `POST /api/setup/trakt/poll`,
+`POST /api/setup/disconnect`, and `DELETE /api/setup/data`.
 
 `GET /api/sync/preview` verifies both linked identities and plans watched, watchlist, and rating differences. Delegated runs fetch a fresh Stremio-held access grant; direct runs refresh their own expiring token. `POST /api/sync/activate` performs the guarded first live apply and arms scheduling. `POST /api/sync/apply` requires an active mode and the exact preview fingerprint. `POST /api/sync/run` invokes the same guarded pipeline used by the hourly cron.
 

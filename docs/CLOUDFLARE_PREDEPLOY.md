@@ -39,6 +39,10 @@ corepack pnpm run worker:test
 - `POST /api/sync/apply` applies only an exact fingerprint in Test or activated Live mode.
 - `POST /api/sync/activate` requires Preview only mode, `ENABLE SYNCIO`, the exact fingerprint, and a successful first apply before arming Live mode.
 - `POST /api/sync/run` invokes the guarded pipeline used by the hourly cron.
+- `GET /api/setup/health` verifies the live account guards without returning credentials.
+- `GET /api/setup/export` returns a credential-free privacy export.
+- `POST /api/setup/disconnect` disarms live sync before removing account connections.
+- `DELETE /api/setup/data` requires an explicit confirmation and deletes all installation rows.
 
 The setup routes use the self-host installation id internally, require `Authorization: Bearer <SYNCIO_SETUP_TOKEN>`, and return only redacted readiness states. Authenticating values and the temporary Trakt device code are encrypted before D1 persistence.
 

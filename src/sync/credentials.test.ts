@@ -31,21 +31,26 @@ test("loads delegated Trakt access from Stremio without persisted Trakt tokens",
     userId: "self-host",
     encryptionKey: TEST_KEY,
     fetcher: async (input, init) => {
-      assert.equal(String(input), "https://stremio.test/api/getUser");
-      assert.deepEqual(JSON.parse(String(init?.body)), { authKey: "stremio-auth-key" });
-      return Response.json({
-        result: {
-          _id: "stremio-user-12345678",
-          trakt: {
-            access_token: "ephemeral-stremio-trakt-token",
-            refresh_token: "never-return-this-refresh-token",
-            created_at: createdAt,
-            expires_in: 604800
+      if (String(input) === "https://stremio.test/api/getUser") {
+        assert.deepEqual(JSON.parse(String(init?.body)), { authKey: "stremio-auth-key" });
+        return Response.json({
+          result: {
+            _id: "stremio-user-12345678",
+            trakt: {
+              access_token: "ephemeral-stremio-trakt-token",
+              refresh_token: "never-return-this-refresh-token",
+              created_at: createdAt,
+              expires_in: 604800
+            }
           }
-        }
-      });
+        });
+      }
+      assert.equal(String(input), "https://trakt.test/users/settings");
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer ephemeral-stremio-trakt-token");
+      return Response.json({ user: { username: "expected_test_user" } });
     },
     stremioApiBase: "https://stremio.test",
+    traktApiBase: "https://trakt.test",
     stremioTraktClientId: "stremio-trakt-client-id",
     now: createdAt * 1000 + 1000
   });
@@ -65,6 +70,51 @@ test("loads delegated Trakt access from Stremio without persisted Trakt tokens",
   });
   assert.equal(JSON.stringify(credentials).includes("never-return-this-refresh-token"), false);
   assert.equal(db.writeCount, 0);
+});
+
+test("rejects delegated access when the Trakt account changes", async () => {
+  const encrypted = await encryptSecret("stremio-auth-key", TEST_KEY, "self-host:stremio-auth");
+  const createdAt = 1_800_000_000;
+  const db = new ReadOnlyD1({
+    user_id: "self-host",
+    stremio_auth_ciphertext: encrypted.value,
+    stremio_user_id: "stremio-user-12345678",
+    trakt_auth_mode: "stremio-delegated",
+    trakt_client_id_ciphertext: null,
+    trakt_client_secret_ciphertext: null,
+    trakt_redirect_uri: null,
+    trakt_access_ciphertext: null,
+    trakt_refresh_ciphertext: null,
+    trakt_expires_at: null,
+    trakt_username: "expected_test_user",
+    encryption_version: 1,
+    created_at: "2026-07-23T00:00:00.000Z",
+    updated_at: "2026-07-23T00:00:00.000Z"
+  });
+
+  await assert.rejects(
+    loadSyncCredentials({
+      db,
+      userId: "self-host",
+      encryptionKey: TEST_KEY,
+      fetcher: async (input) => String(input).includes("stremio.test")
+        ? Response.json({
+          result: {
+            _id: "stremio-user-12345678",
+            trakt: {
+              access_token: "ephemeral-token",
+              created_at: createdAt,
+              expires_in: 604800
+            }
+          }
+        })
+        : Response.json({ user: { username: "different_user" } }),
+      stremioApiBase: "https://stremio.test",
+      traktApiBase: "https://trakt.test",
+      now: createdAt * 1000 + 1000
+    }),
+    /received different_user, expected expected_test_user/
+  );
 });
 
 test("rejects delegated access when the Stremio account changes", async () => {

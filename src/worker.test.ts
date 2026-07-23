@@ -32,6 +32,16 @@ test("links configure onboarding to the current Trakt app creation page", async 
   assert.doesNotMatch(body, /trakt\.tv\/oauth\/applications/);
 });
 
+test("exposes the configured support channels without embedding payment data", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
+  const body = await response.text();
+
+  assert.match(body, /https:\/\/github\.com\/sponsors\/giaaaacomo/);
+  assert.match(body, /https:\/\/ko-fi\.com\/giaaaacomo/);
+  assert.match(body, /https:\/\/www\.paypal\.com\/paypalme\/giaaaacomo/);
+  assert.doesNotMatch(body, /paypal\.com\/cgi-bin\/webscr/);
+});
+
 test("keeps the delegated flow primary and direct Trakt controls advanced", async () => {
   const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
   const body = await response.text();
@@ -84,7 +94,8 @@ test("reports redacted setup status for a self-host install", async () => {
       encryptionVersion: null
     },
     traktDevice: { state: "idle" },
-    latestRun: null
+    latestRun: null,
+    recentRuns: []
   });
 });
 
@@ -345,6 +356,18 @@ test("enables delegated Trakt access with an explicit account guard and clears d
   assert.equal(saveDirectApp.status, 200);
   assert.equal(db.connections.get("self-host")?.trakt_auth_mode, "stremio-delegated");
   assert.equal(db.connections.get("self-host")?.trakt_username, "delegated_test");
+
+  const health = await handleRequest(
+    authorizedRequest("https://syncio.example/api/setup/health"),
+    env,
+    externalFetch
+  );
+  const healthBody = await health.json() as Record<string, unknown>;
+  assert.equal(health.status, 200);
+  assert.equal(healthBody.authMode, "stremio-delegated");
+  assert.equal(healthBody.traktUsername, "delegated_test");
+  assert.equal(typeof healthBody.traktGrantExpiresAt, "string");
+  assert.equal(JSON.stringify(healthBody).includes("stremio-held-access-token"), false);
 });
 
 test("refuses delegated Trakt access when the expected account does not match", async () => {
@@ -429,6 +452,68 @@ test("does not arm live mode through an ordinary settings save", async () => {
   assert.equal(db.settings.get("self-host")?.scope, "account-preview");
 });
 
+test("exports redacted data, disconnects accounts, and deletes all local state", async () => {
+  const db = new MemoryD1();
+  const env = workerEnv(db);
+  const linked = await handleRequest(
+    authorizedRequest("https://syncio.example/api/setup/stremio", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "auth-key", authKey: "raw-stremio-auth-key" })
+    }),
+    env,
+    async () => Response.json({ result: { _id: "stremio-user-12345678" } })
+  );
+  assert.equal(linked.status, 200);
+  await worker.fetch(authorizedRequest("https://syncio.example/api/setup/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      scope: "account-preview",
+      historyMode: "union",
+      watchedEnabled: true,
+      ratingSyncEnabled: true,
+      libraryWatchlistEnabled: true,
+      removalsEnabled: false,
+      likeThreshold: 7,
+      loveThreshold: 9,
+      syncIntervalMinutes: 60,
+      optionalCatalogsEnabled: false
+    })
+  }), env);
+
+  const exported = await worker.fetch(
+    authorizedRequest("https://syncio.example/api/setup/export"),
+    env
+  );
+  const exportedBody = await exported.json() as Record<string, unknown>;
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers.get("content-disposition") ?? "", /syncio-export-/);
+  assert.equal(JSON.stringify(exportedBody).includes("raw-stremio-auth-key"), false);
+  assert.equal((exportedBody.connection as Record<string, unknown>).hasEncryptedStremioAuth, true);
+
+  db.settings.get("self-host")!.scope = "account";
+  db.settings.get("self-host")!.live_activated_at = "2026-07-23T17:00:00.000Z";
+  const disconnected = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/disconnect", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ confirmation: "DISCONNECT SYNCIO" })
+  }), env);
+  assert.equal(disconnected.status, 200);
+  assert.equal(db.connections.has("self-host"), false);
+  assert.equal(db.settings.get("self-host")?.scope, "account-preview");
+  assert.equal(db.settings.get("self-host")?.live_activated_at, null);
+
+  const deleted = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/data", {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ confirmation: "DELETE SYNCIO DATA" })
+  }), env);
+  assert.equal(deleted.status, 200);
+  assert.equal(db.users.size, 0);
+  assert.equal(db.settings.size, 0);
+});
+
 function authorizedRequest(input: string, init: RequestInit = {}): Request {
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${SETUP_TOKEN}`);
@@ -471,6 +556,12 @@ class MemoryD1 implements D1DatabaseLike {
         }
         if (query.includes("FROM sync_settings WHERE user_id = ?")) {
           return (self.settings.get(String(bound[0])) ?? null) as T | null;
+        }
+        if (query.includes("AS runs")) {
+          return { runs: "[]" } as T;
+        }
+        if (query.includes("AS rows")) {
+          return { rows: "[]" } as T;
         }
         if (query.includes("COUNT(*) AS count")) {
           return { count: 0 } as T;
@@ -523,6 +614,15 @@ class MemoryD1 implements D1DatabaseLike {
         }
         if (query.startsWith("DELETE FROM trakt_device_sessions")) {
           self.sessions.delete(String(bound[0]));
+        }
+        if (query.startsWith("DELETE FROM connections")) {
+          self.connections.delete(String(bound[0]));
+        }
+        if (query.startsWith("DELETE FROM sync_settings")) {
+          self.settings.delete(String(bound[0]));
+        }
+        if (query.startsWith("DELETE FROM users")) {
+          self.users.delete(String(bound[0]));
         }
         if (query.startsWith("INSERT INTO sync_settings")) {
           const userId = String(bound[0]);
