@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+dist-worker/
+.wrangler/
+.mf/
+.dev.vars
+coverage/
+*.log
+research/output/
+.syncio/
+wrangler.staging.toml
+CODEX_CONTEXT_STREMIO_TRAKT_SYNC.md
+SYNCIO.code-workspace

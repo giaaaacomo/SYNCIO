@@ -1,0 +1,152 @@
+# SYNCIO
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/giaaaacomo/SYNCIO)
+
+SYNCIO is a self-hosted TypeScript project for deep Stremio <-> Trakt synchronization. Each installation runs in the user's own Cloudflare account and stores its encrypted credentials and sync state in its own D1 database.
+
+> [!IMPORTANT]
+> Version 0.1.0 is a technical preview. The guarded test-account pipeline is implemented and validated, but automatic writes for unrestricted live accounts remain disabled. Deploy it only with isolated test accounts until that final safety gate is complete.
+
+This repository started with **Milestone 0** research probes that verify undocumented or weakly documented behavior. It now contains a self-hosted Cloudflare Worker with guarded watched reconciliation, rating mapping, watchlist import, D1 state, and hourly test scheduling.
+
+Research probes cover:
+
+- Stremio login/auth-key acquisition.
+- Stremio `libraryItem` read/write behavior.
+- history-only watched items with `removed=true` and `temp=true`.
+- movie and episode watched writes.
+- Stremio Like/Love get/send behavior.
+- Stremio rating enumeration fallback discovery.
+- Trakt last activity and pagination behavior.
+- a minimal no-catalog Stremio manifest.
+
+## Requirements
+
+The probes use only Node standard APIs at runtime, but this repository compiles TypeScript before running them:
+
+```sh
+npm install
+npm run probe:stremio:auth
+```
+
+In this workspace I used Corepack with pnpm because `npm` was not in PATH:
+
+```sh
+corepack pnpm install
+corepack pnpm test
+corepack pnpm run typecheck
+```
+
+## Secrets
+
+Copy `.env.example` to `.env` only locally if useful. The probes load `.env` automatically. Do not commit real account data.
+
+Every probe redacts secrets in its output. Probes that can mutate Stremio require an explicit `--apply` flag and otherwise run as dry-runs.
+
+## Watched Sync
+
+The first guarded sync commands are still conservative and dry-run by default.
+
+Run the full current test sync set:
+
+```sh
+corepack pnpm run sync:run
+```
+
+This executes watched, ratings, and watchlist planning together using the guarded test filters and local settings from `.syncio/settings.json`. Writes require `--apply`.
+
+Run watched reconciliation directly:
+
+```sh
+corepack pnpm run sync:watched -- --movie-ids tt0133093 --show-ids tt0903747,tt3032476
+```
+
+It plans both directions unless a direction is supplied:
+
+```sh
+corepack pnpm run sync:watched -- --direction trakt-to-stremio --show-ids tt0903747
+corepack pnpm run sync:watched -- --direction stremio-to-trakt --show-ids tt3032476
+```
+
+Writes require `--apply`. Unfiltered writes are refused unless `--allow-unfiltered-apply` is also passed. Applied operations are stored locally in `.syncio/state.json`, which is ignored by Git.
+
+## Local Research Harness
+
+SYNCIO is addon-first. The current local addon shell can be started with:
+
+```sh
+corepack pnpm run addon:dev
+```
+
+By default it serves:
+
+- configure page: `http://127.0.0.1:7017/configure`
+- manifest: `http://127.0.0.1:7017/manifest.json`
+- install URL: `stremio://127.0.0.1:7017/manifest.json`
+
+For local testing, paste the manifest URL into Stremio's add-on repository field. Some desktop builds rewrite `stremio://` shortcut links for localhost and may drop the port.
+
+The shell currently exposes a single `SYNCIO Status` catalog item to verify the Stremio addon shape while account linking and self-hosted sync are being built.
+
+The configure page also has a local Trakt Device OAuth flow:
+
+- `Start Trakt Link` requests a Trakt user code and saves only the device code locally.
+- `Complete Link` polls once and saves Trakt access/refresh tokens to `.env` when the user has authorized the code.
+- The page and `/status.json` only show redacted readiness states, never token values.
+
+The page also persists local sync settings in `.syncio/settings.json`:
+
+- watched, ratings, and watchlist toggles;
+- Trakt rating thresholds for Stremio Like/Love mapping;
+- `test` scope for guarded preview/apply;
+- `account-preview` scope for broader account previews with apply disabled.
+
+Watched synchronization must preserve existing visible Library membership. A collected movie or series is not removed or hidden just because its watched state changes.
+
+It also exposes guarded previews and test applies for the current test set. `Preview Full Test Sync` and `Apply Full Test Sync` run all current sync cores together. Every action uses explicit filters:
+
+- watched: Matrix, Breaking Bad, Better Call Saul;
+- ratings: Matrix;
+- watchlist: Interstellar.
+
+The preview/apply paths are intentionally idempotent: when the target side already matches, they report `target-skip` instead of planning a write.
+
+Full sync preview responses include a compact review summary before the raw details: planned totals, watched groups, rating changes, watchlist additions, Library/history-only impact, and safety warnings.
+
+Watched, ratings, and watchlist now use importable core modules directly from the addon. The old probe commands remain as thin CLI wrappers for repeatable research runs.
+
+## Self-Hosted Cloudflare Shell
+
+The self-hosted Worker lives in `src/`. It serves the addon manifest, protected configure flow, status catalog, health/status endpoints, sync APIs, and the guarded hourly scheduler.
+
+```sh
+corepack pnpm run worker:typecheck
+corepack pnpm run worker:test
+```
+
+`wrangler.jsonc` declares a generic automatically provisioned D1 binding, required Worker secrets, and the hourly cron. Migrations live in `migrations/` and the deploy script applies them through the binding before publishing.
+
+The Worker has a small typed D1 adapter in `src/storage/d1.ts`. `/status.json` and `/api/status` report whether the D1 binding is configured and, when reachable, basic table counts.
+
+Production is self-hosted: every user deploys their own Worker/D1 and creates their own Trakt application during onboarding. There is no shared production Trakt app and no hosted-by-us sync service planned.
+
+The deployed staging engine supports identity-checked previews, fingerprint-confirmed bidirectional watched test applies, paged Trakt-to-Stremio rating mapping, a D1 change ledger, persisted run status, and an hourly guarded scheduler. Live-account scheduling remains disabled while staging is evaluated.
+
+The Worker configure page now supports the self-host onboarding sequence:
+
+- setup routes require a separate `SYNCIO_SETUP_TOKEN` bearer token;
+- Trakt client id and required client secret are encrypted in D1;
+- Trakt Device OAuth starts and polls at the server-provided interval, then stores encrypted access/refresh tokens;
+- the authorized Trakt username is verified before the link is accepted;
+- Stremio can be linked with email/password or an existing auth key; the password is never stored, while the verified auth key is encrypted;
+- sync settings default to account preview, with removals disabled.
+
+The relevant protected routes are `GET /api/setup/status`, `GET|PUT /api/setup/settings`, `POST /api/setup/trakt-app`, `POST /api/setup/trakt/start`, `POST /api/setup/trakt/poll`, and `POST /api/setup/stremio`.
+
+`GET /api/sync/preview` verifies both linked identities, refreshes expiring Trakt tokens, and plans watched, watchlist, and rating differences. `POST /api/sync/apply` requires Test mode and the exact preview fingerprint. `POST /api/sync/run` invokes the same guarded pipeline used by the hourly cron.
+
+Read [docs/SELF_HOST_ONBOARDING.md](docs/SELF_HOST_ONBOARDING.md) and [docs/CLOUDFLARE_PREDEPLOY.md](docs/CLOUDFLARE_PREDEPLOY.md) before deploying.
+
+## Research Notes
+
+Read [research/README.md](research/README.md) for the original probe execution order and required environment variables.

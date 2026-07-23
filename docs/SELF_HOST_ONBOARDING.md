@@ -1,0 +1,50 @@
+# Self-Host Onboarding Shape
+
+SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
+
+Each user deploys their own Cloudflare Worker + D1 database and creates their own Trakt application. SYNCIO code guides the setup, but the runtime that processes tokens and sync state belongs to the user.
+
+Version 0.1.0 is a technical preview for isolated test accounts. Unrestricted live-account writes and scheduling are intentionally disabled until the final safety validation is complete.
+
+## Intended User Flow
+
+1. Open the SYNCIO deploy/setup page from the repository.
+2. Authorize the Deploy to Cloudflare flow against the user's Cloudflare and Git provider accounts.
+3. Choose the Worker, repository, and automatically provisioned D1 names.
+4. Generate independent `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values and enter both as Worker secrets.
+5. Let Cloudflare clone the repository, apply migrations, and deploy the Worker.
+6. Open the deployed `/configure` page.
+7. Create a Trakt application at `https://trakt.tv/oauth/applications/new`. The legacy application-list URL may return `404` in the current Trakt UI.
+8. Paste the Trakt app client id and client secret.
+9. Link Trakt with Device OAuth.
+10. Link Stremio.
+11. Install the generated manifest in Stremio.
+
+## Privacy Boundary
+
+With this model, SYNCIO maintainers do not receive, store, or process user tokens on infrastructure controlled by us.
+
+The user's own Cloudflare project stores:
+
+- encrypted Stremio auth material;
+- encrypted Trakt OAuth tokens;
+- encrypted Trakt app credentials when needed;
+- sync settings;
+- sync run metadata and dedupe ledger.
+
+The user's Trakt account controls API authorization, and the user's Cloudflare account controls runtime/storage. There is no shared production Trakt app.
+
+## One-Click Target
+
+The realistic target is not literally zero clicks because Cloudflare and Trakt both require user-owned authorization. The target is guided one-click per external action:
+
+- one deploy button for repository cloning, D1 provisioning, migrations, and Worker creation;
+- two locally generated secrets entered directly into the user's Cloudflare deployment;
+- one Trakt app creation link with copyable callback/redirect values;
+- one encrypted Trakt app credential save;
+- one Device OAuth approval;
+- one Stremio addon install link.
+
+Every setup page must show redacted readiness only, never raw tokens.
+
+The setup token is kept in browser `sessionStorage`, is sent only as a bearer header to the user's own Worker, and is never written to D1. Closing the browser tab clears that browser session. The encryption key never enters the browser.

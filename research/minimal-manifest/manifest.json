@@ -1,0 +1,13 @@
+{
+  "id": "community.syncio.research",
+  "version": "0.0.0",
+  "name": "SYNCIO Research",
+  "description": "Milestone 0 no-catalog manifest probe for Stremio client compatibility.",
+  "resources": [],
+  "types": [],
+  "catalogs": [],
+  "behaviorHints": {
+    "configurable": true,
+    "configurationRequired": false
+  }
+}

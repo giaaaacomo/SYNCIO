@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "syncio",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-20",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "SYNCIO_DB"
+    }
+  ],
+  "secrets": {
+    "required": [
+      "SYNCIO_ENCRYPTION_KEY",
+      "SYNCIO_SETUP_TOKEN"
+    ]
+  }
+}

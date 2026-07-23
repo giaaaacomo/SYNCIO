@@ -1,0 +1,62 @@
+{
+  "name": "syncio",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.14.0",
+  "description": "Self-hosted deep synchronization between Stremio and Trakt.",
+  "scripts": {
+    "build": "tsc --outDir dist",
+    "probe:stremio:auth": "tsc --outDir dist && node dist/stremio-auth.js",
+    "probe:stremio:library": "tsc --outDir dist && node dist/stremio-library-read.js",
+    "probe:stremio:library-item": "tsc --outDir dist && node dist/stremio-library-item.js",
+    "probe:stremio:library-presence": "tsc --outDir dist && node dist/stremio-library-presence.js",
+    "probe:stremio:movie": "tsc --outDir dist && node dist/stremio-movie-watched-write.js",
+    "probe:stremio:episode": "tsc --outDir dist && node dist/stremio-episode-watched-write.js",
+    "probe:stremio:history-only": "tsc --outDir dist && node dist/stremio-history-only-item.js",
+    "probe:stremio:rating-get": "tsc --outDir dist && node dist/stremio-rating-get.js",
+    "probe:stremio:rating-send": "tsc --outDir dist && node dist/stremio-rating-send.js",
+    "probe:stremio:rating-enumeration": "tsc --outDir dist && node dist/stremio-rating-enumeration.js",
+    "probe:trakt:device-start": "tsc --outDir dist && node dist/trakt-device-start.js",
+    "probe:trakt:device-poll": "tsc --outDir dist && node dist/trakt-device-poll.js",
+    "probe:trakt:account": "tsc --outDir dist && node dist/trakt-account.js",
+    "probe:trakt:baseline": "tsc --outDir dist && node dist/trakt-baseline.js",
+    "probe:trakt:lookup": "tsc --outDir dist && node dist/trakt-lookup.js",
+    "probe:trakt:last-activities": "tsc --outDir dist && node dist/trakt-last-activities.js",
+    "probe:trakt:pagination": "tsc --outDir dist && node dist/trakt-pagination.js",
+    "probe:import:watched": "tsc --outDir dist && node dist/trakt-to-stremio-import.js",
+    "probe:import:ratings": "tsc --outDir dist && node dist/trakt-to-stremio-ratings.js",
+    "probe:import:watchlist": "tsc --outDir dist && node dist/trakt-to-stremio-watchlist.js",
+    "probe:export:watched": "tsc --outDir dist && node dist/stremio-to-trakt-watched.js",
+    "probe:manifest": "tsc --outDir dist && node dist/minimal-manifest/server.js",
+    "addon:dev": "tsc --outDir dist && node dist/addon/server.js",
+    "sync:run": "tsc --outDir dist && node dist/sync-run.js",
+    "sync:watched": "tsc --outDir dist && node dist/sync-watched.js",
+    "worker:typecheck": "tsc -p tsconfig.worker.json --noEmit",
+    "worker:test": "tsc -p tsconfig.worker.test.json --outDir dist-worker && node --test dist-worker/*.test.js dist-worker/auth/*.test.js dist-worker/crypto/*.test.js dist-worker/storage/*.test.js dist-worker/storage/repositories/*.test.js dist-worker/stremio/*.test.js dist-worker/sync/*.test.js dist-worker/trakt/*.test.js",
+    "db:migrations:apply": "wrangler d1 migrations apply SYNCIO_DB --remote",
+    "deploy": "pnpm run db:migrations:apply && wrangler deploy",
+    "deploy:staging": "wrangler deploy --config wrangler.staging.toml",
+    "test": "tsc --outDir dist && node --test dist/lib/*.test.js dist/addon/*.test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.113.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "SYNCIO_DB": {
+        "description": "Private D1 storage for encrypted account connections, sync settings, cursors, runs, and the idempotency ledger."
+      },
+      "SYNCIO_ENCRYPTION_KEY": {
+        "description": "A private base64-encoded 32-byte key used to encrypt account credentials before D1 storage. Generate it with: openssl rand -base64 32"
+      },
+      "SYNCIO_SETUP_TOKEN": {
+        "description": "A separate long random token that protects the SYNCIO configuration and sync APIs. Generate it with: openssl rand -base64 48"
+      }
+    }
+  }
+}
