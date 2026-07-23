@@ -4,7 +4,7 @@ SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
 
 Each user deploys their own Cloudflare Worker + D1 database. By default, SYNCIO reuses the Trakt authorization already linked to the user's Stremio account. The runtime that processes credentials and sync state belongs to the user.
 
-Version 0.2.0 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
+Version 0.2.1 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
 
 ## Intended User Flow
 
@@ -22,7 +22,9 @@ Version 0.2.0 is a technical preview. Begin with isolated test accounts and insp
 
 Delegated mode reads the current Trakt access grant from Stremio at the beginning of every run. It uses Stremio's public Trakt client identity for Trakt requests, keeps the access token only in memory, ignores the refresh token, and fails closed if the grant is absent, expired, or belongs to another account. Reconnect Trakt inside Stremio if that guard reports an expired grant.
 
-Direct OAuth remains available as an optional fallback. It requires a user-owned Trakt application, consumes a Trakt connected-app slot, and stores its encrypted OAuth tokens in D1.
+Direct OAuth remains available under the collapsed **Advanced options** section as an optional fallback. It requires a user-owned Trakt application, consumes a Trakt connected-app slot, and stores its encrypted OAuth tokens in D1. The same section contains direct-app readiness so the default status view stays focused on the delegated path.
+
+Less common sync controls, including optional catalogs and the internal account scope, are grouped under **Advanced sync settings**. New installs can leave them closed and use the preview-to-live activation flow.
 
 Each run applies at most 250 deterministic differences. Larger first imports converge over later hourly runs. Returning the mode to Preview only disarms live scheduling immediately. History removals remain disabled.
 

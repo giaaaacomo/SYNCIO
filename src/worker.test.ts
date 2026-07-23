@@ -32,6 +32,21 @@ test("links configure onboarding to the current Trakt app creation page", async 
   assert.doesNotMatch(body, /trakt\.tv\/oauth\/applications/);
 });
 
+test("keeps the delegated flow primary and direct Trakt controls advanced", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
+  const body = await response.text();
+  const advancedOptions = body.indexOf('id="advanced-options"');
+
+  assert.ok(advancedOptions > 0);
+  assert.ok(body.indexOf('id="stremio-form"') < advancedOptions);
+  assert.ok(body.indexOf('id="trakt-transport-form"') < advancedOptions);
+  assert.ok(body.indexOf('id="trakt-app-status"') > advancedOptions);
+  assert.ok(body.indexOf('id="trakt-app-form"') > advancedOptions);
+  assert.ok(body.indexOf('id="trakt-link-start"') > advancedOptions);
+  assert.ok(body.indexOf('id="trakt-use-direct"') > advancedOptions);
+  assert.match(body, /<summary>Advanced sync settings<\/summary>[\s\S]*name="optionalCatalogsEnabled"/);
+});
+
 test("reports redacted setup status for a self-host install", async () => {
   const db = new MemoryD1();
   const response = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/status"), {

@@ -893,6 +893,9 @@ function configurePage(origin: string): string {
     .user-code { font-size: 1.6rem; font-weight: 800; letter-spacing: 0; }
     fieldset { border: 0; padding: 0; margin: 0; }
     summary { margin: 16px 0; font-size: 1.2rem; font-weight: 700; cursor: pointer; }
+    .advanced-group + .advanced-group { margin-top: 28px; }
+    .inline-advanced { grid-column: 1 / -1; }
+    .inline-advanced summary { margin: 4px 0 12px; font-size: 1rem; }
     .mode { display: flex; width: fit-content; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; overflow: hidden; }
     .mode label { display: block; padding: 9px 12px; cursor: pointer; }
     .mode label + label { border-left: 1px solid color-mix(in srgb, CanvasText 24%, transparent); }
@@ -934,45 +937,10 @@ function configurePage(origin: string): string {
         <dt>Storage</dt><dd id="storage-status">Loading</dd>
         <dt>Encryption</dt><dd id="encryption-status">Loading</dd>
         <dt>Trakt transport</dt><dd id="trakt-transport-status">Loading</dd>
-        <dt>Trakt app</dt><dd id="trakt-app-status">Loading</dd>
-        <dt>Direct OAuth</dt><dd id="trakt-oauth-status">Loading</dd>
         <dt>Stremio</dt><dd id="stremio-status">Loading</dd>
         <dt>Last sync</dt><dd id="last-sync-status">No runs yet</dd>
       </dl>
     </section>
-
-    <details class="panel protected hidden">
-      <summary>Direct Trakt App (Optional)</summary>
-      <p>Fallback transport using a separate Trakt application. Values are encrypted before they are stored in your D1 database.</p>
-      <p><a href="https://app.trakt.tv/settings/apps/api/new" target="_blank" rel="noreferrer">Create Trakt API app</a></p>
-      <form id="trakt-app-form">
-        <label>
-          Client ID
-          <input name="clientId" autocomplete="off" required>
-        </label>
-        <label>
-          Client Secret
-          <input name="clientSecret" type="password" autocomplete="off" required>
-        </label>
-        <label>
-          Redirect URI
-          <input name="redirectUri" type="url" value="${escapeHtml(`${origin}/oauth/trakt/callback`)}" required>
-        </label>
-        <button type="submit">Save Trakt App</button>
-      </form>
-      <p id="trakt-app-result" class="result muted"></p>
-    </details>
-
-    <details class="panel protected hidden">
-      <summary>Direct Trakt Account (Optional)</summary>
-      <div class="actions">
-        <button id="trakt-link-start" type="button">Link Trakt</button>
-        <a id="trakt-activate" class="button hidden" target="_blank" rel="noreferrer">Open Trakt Approval</a>
-        <button id="trakt-link-poll" class="hidden" type="button">Check Approval</button>
-      </div>
-      <p id="trakt-user-code" class="user-code hidden"></p>
-      <p id="trakt-link-result" class="result muted"></p>
-    </details>
 
     <section class="panel protected hidden">
       <h2>Stremio Account</h2>
@@ -1003,11 +971,56 @@ function configurePage(origin: string): string {
         </label>
         <div class="actions">
           <button type="submit">Use Stremio Delegated</button>
-          <button id="trakt-use-direct" class="secondary" type="button">Use Direct OAuth</button>
         </div>
       </form>
       <p id="trakt-transport-result" class="result muted"></p>
     </section>
+
+    <details class="panel protected hidden" id="advanced-options">
+      <summary>Advanced options</summary>
+
+      <div class="advanced-group">
+        <h3>Direct Trakt status</h3>
+        <dl>
+          <dt>Trakt app</dt><dd id="trakt-app-status">Loading</dd>
+          <dt>Direct OAuth</dt><dd id="trakt-oauth-status">Loading</dd>
+        </dl>
+      </div>
+
+      <div class="advanced-group">
+        <h3>Direct Trakt App</h3>
+        <p>Fallback transport using a separate Trakt application. Values are encrypted before they are stored in your D1 database.</p>
+        <p><a href="https://app.trakt.tv/settings/apps/api/new" target="_blank" rel="noreferrer">Create Trakt API app</a></p>
+        <form id="trakt-app-form">
+          <label>
+            Client ID
+            <input name="clientId" autocomplete="off" required>
+          </label>
+          <label>
+            Client Secret
+            <input name="clientSecret" type="password" autocomplete="off" required>
+          </label>
+          <label>
+            Redirect URI
+            <input name="redirectUri" type="url" value="${escapeHtml(`${origin}/oauth/trakt/callback`)}" required>
+          </label>
+          <button type="submit">Save Trakt App</button>
+        </form>
+        <p id="trakt-app-result" class="result muted"></p>
+      </div>
+
+      <div class="advanced-group">
+        <h3>Direct Trakt Account</h3>
+        <div class="actions">
+          <button id="trakt-link-start" type="button">Link Trakt</button>
+          <a id="trakt-activate" class="button hidden" target="_blank" rel="noreferrer">Open Trakt Approval</a>
+          <button id="trakt-link-poll" class="hidden" type="button">Check Approval</button>
+          <button id="trakt-use-direct" class="secondary" type="button">Use Direct OAuth</button>
+        </div>
+        <p id="trakt-user-code" class="user-code hidden"></p>
+        <p id="trakt-link-result" class="result muted"></p>
+      </div>
+    </details>
 
     <section class="panel protected hidden">
       <h2>Sync Settings</h2>
@@ -1016,21 +1029,26 @@ function configurePage(origin: string): string {
           <label><input name="watchedEnabled" type="checkbox"> Watched history</label>
           <label><input name="ratingSyncEnabled" type="checkbox"> Ratings</label>
           <label><input name="libraryWatchlistEnabled" type="checkbox"> Watchlist to Library</label>
-          <label><input name="optionalCatalogsEnabled" type="checkbox"> Optional catalogs</label>
-          <label>Mode
-            <select name="scope">
-              <option value="account-preview">Preview only</option>
-              <option value="test">Test account</option>
-              <option value="account" disabled>Live account (activate below)</option>
-            </select>
-          </label>
-          <label>Interval
-            <select name="syncIntervalMinutes">
-              <option value="60">60 minutes</option>
-            </select>
-          </label>
           <label>Like threshold <input name="likeThreshold" type="number" min="1" max="9"></label>
           <label>Love threshold <input name="loveThreshold" type="number" min="2" max="10"></label>
+          <details class="inline-advanced">
+            <summary>Advanced sync settings</summary>
+            <div class="settings">
+              <label><input name="optionalCatalogsEnabled" type="checkbox"> Optional catalogs</label>
+              <label>Mode
+                <select name="scope">
+                  <option value="account-preview">Preview only</option>
+                  <option value="test">Test account</option>
+                  <option value="account" disabled>Live account (activate below)</option>
+                </select>
+              </label>
+              <label>Interval
+                <select name="syncIntervalMinutes">
+                  <option value="60">60 minutes</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </div>
         <button type="submit">Save Settings</button>
       </form>
