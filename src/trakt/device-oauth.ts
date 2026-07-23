@@ -1,3 +1,5 @@
+import { traktApiError } from "./api-error.js";
+
 const DEFAULT_TRAKT_API_BASE = "https://api.trakt.tv";
 
 export interface TraktDeviceAuthorization {
@@ -24,11 +26,7 @@ export type TraktPollResult =
   | { kind: "pending" }
   | { kind: "invalid" | "used" | "expired" | "denied" | "slow-down" };
 
-export class TraktApiError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message);
-  }
-}
+export { TraktApiError } from "./api-error.js";
 
 export async function startTraktDeviceAuthorization(
   clientId: string,
@@ -40,7 +38,7 @@ export async function startTraktDeviceAuthorization(
     headers: traktHeaders(clientId),
     body: JSON.stringify({ client_id: clientId })
   });
-  if (!response.ok) throw new TraktApiError(`Trakt device authorization failed with HTTP ${response.status}.`, response.status);
+  if (!response.ok) throw traktApiError(`Trakt device authorization failed with HTTP ${response.status}.`, response);
   const body = recordValue(await response.json(), "Trakt device authorization response");
   return {
     deviceCode: requiredString(body.device_code, "device_code"),
@@ -70,7 +68,7 @@ export async function pollTraktDeviceAuthorization(
   if (response.status === 410) return { kind: "expired" };
   if (response.status === 418) return { kind: "denied" };
   if (response.status === 429) return { kind: "slow-down" };
-  if (!response.ok) throw new TraktApiError(`Trakt device token request failed with HTTP ${response.status}.`, response.status);
+  if (!response.ok) throw traktApiError(`Trakt device token request failed with HTTP ${response.status}.`, response);
 
   const body = recordValue(await response.json(), "Trakt token response");
   return {
@@ -96,7 +94,7 @@ export async function fetchTraktIdentity(
       authorization: `Bearer ${accessToken}`
     }
   });
-  if (!response.ok) throw new TraktApiError(`Trakt account verification failed with HTTP ${response.status}.`, response.status);
+  if (!response.ok) throw traktApiError(`Trakt account verification failed with HTTP ${response.status}.`, response);
   const body = recordValue(await response.json(), "Trakt settings response");
   const user = recordValue(body.user, "Trakt settings user");
   return { username: requiredString(user.username, "user.username") };
@@ -121,7 +119,7 @@ export async function refreshTraktToken(
       grant_type: "refresh_token"
     })
   });
-  if (!response.ok) throw new TraktApiError(`Trakt token refresh failed with HTTP ${response.status}.`, response.status);
+  if (!response.ok) throw traktApiError(`Trakt token refresh failed with HTTP ${response.status}.`, response);
   return parseTokens(await response.json());
 }
 

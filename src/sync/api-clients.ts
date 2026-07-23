@@ -1,3 +1,5 @@
+import { traktApiError } from "../trakt/api-error.js";
+
 export interface StremioLibraryItem {
   _id: string;
   _ctime?: string;
@@ -82,7 +84,7 @@ export async function traktGet(
       "user-agent": "SYNCIO/0.1.0 self-hosted"
     }
   });
-  if (!response.ok) throw new Error(`Trakt ${path} failed with HTTP ${response.status}.`);
+  if (!response.ok) throw traktApiError(`Trakt ${path} failed with HTTP ${response.status}.`, response);
   return response.json();
 }
 
@@ -94,7 +96,7 @@ export async function traktGetAllPages(
   apiBase = "https://api.trakt.tv",
   options: { limit?: number; maxPages?: number } = {}
 ): Promise<TraktPaginatedResult> {
-  const limit = options.limit ?? 1000;
+  const limit = options.limit ?? 250;
   const maxPages = options.maxPages ?? 25;
   if (!Number.isInteger(limit) || limit < 1 || !Number.isInteger(maxPages) || maxPages < 1) {
     throw new Error("Invalid Trakt pagination limits.");
@@ -132,7 +134,7 @@ export async function traktGetPage(
   const response = await fetcher(`${apiBase.replace(/\/$/, "")}${pagePath}`, {
     headers: traktHeaders(clientId, accessToken)
   });
-  if (!response.ok) throw new Error(`Trakt ${pagePath} failed with HTTP ${response.status}.`);
+  if (!response.ok) throw traktApiError(`Trakt ${pagePath} failed with HTTP ${response.status}.`, response);
   const payload = await response.json();
   if (!Array.isArray(payload)) throw new Error(`Trakt ${pagePath} response must be an array.`);
   return {
@@ -163,7 +165,7 @@ export async function traktPost(
     },
     body: JSON.stringify(payload)
   });
-  if (!response.ok) throw new Error(`Trakt ${path} failed with HTTP ${response.status}.`);
+  if (!response.ok) throw traktApiError(`Trakt ${path} failed with HTTP ${response.status}.`, response);
   return response.json();
 }
 

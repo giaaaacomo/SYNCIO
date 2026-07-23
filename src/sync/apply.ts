@@ -18,7 +18,7 @@ import {
   type StremioLibraryItem
 } from "./api-clients.js";
 import { loadSyncCredentials } from "./credentials.js";
-import { buildVisibleMovie, buildWatchedMovie, buildWatchedSeries } from "./library-changes.js";
+import { buildVisibleMovie, buildVisibleSeries, buildWatchedMovie, buildWatchedSeries } from "./library-changes.js";
 import { operationFingerprint, previewWorkerSync, type BaselineOperation } from "./preview.js";
 import { decodeWatchedField, encodeWatchedField } from "./watched-bitfield.js";
 
@@ -130,16 +130,33 @@ async function applyWorkerSyncForScopes(
     await recordOperations(input.db, input.userId, ratingOperations);
   }
 
-  if (toTrakt.length > 0) {
+  const historyOperations = toTrakt.filter((item) =>
+    item.kind === "watched-movie" || item.kind === "watched-episode"
+  );
+  const watchlistOperations = toTrakt.filter((item) =>
+    item.kind === "watchlist-movie" || item.kind === "watchlist-series"
+  );
+  if (historyOperations.length > 0) {
     await traktPost(
       "/sync/history",
-      buildTraktHistoryPayload(toTrakt),
+      buildTraktHistoryPayload(historyOperations),
       credentials.trakt.clientId,
       credentials.trakt.accessToken,
       input.fetcher,
       input.traktApiBase
     );
-    await recordOperations(input.db, input.userId, toTrakt);
+    await recordOperations(input.db, input.userId, historyOperations);
+  }
+  if (watchlistOperations.length > 0) {
+    await traktPost(
+      "/sync/watchlist",
+      buildTraktWatchlistPayload(watchlistOperations),
+      credentials.trakt.clientId,
+      credentials.trakt.accessToken,
+      input.fetcher,
+      input.traktApiBase
+    );
+    await recordOperations(input.db, input.userId, watchlistOperations);
   }
   await setSyncCursor(input.db, input.userId, ratingCursor.key, ratingCursor.nextOffset);
   return {
@@ -149,6 +166,8 @@ async function applyWorkerSyncForScopes(
     stremioChanges,
     ratingOperations: ratingOperations.length,
     traktOperations: toTrakt.length,
+    traktHistoryOperations: historyOperations.length,
+    traktWatchlistOperations: watchlistOperations.length,
     ratingNextOffset: ratingCursor.nextOffset,
     fingerprint
   };
@@ -179,6 +198,16 @@ export function buildTraktHistoryPayload(operations: BaselineOperation[]): Recor
   return { movies, shows: Array.from(shows.values()) };
 }
 
+export function buildTraktWatchlistPayload(operations: BaselineOperation[]): Record<string, unknown> {
+  const movies = operations
+    .filter((item) => item.direction === "stremio-to-trakt" && item.kind === "watchlist-movie")
+    .map((item) => ({ ids: { imdb: item.imdb } }));
+  const shows = operations
+    .filter((item) => item.direction === "stremio-to-trakt" && item.kind === "watchlist-series")
+    .map((item) => ({ ids: { imdb: item.imdb } }));
+  return { movies, shows };
+}
+
 async function recordOperations(db: D1DatabaseLike, userId: string, operations: BaselineOperation[]): Promise<void> {
   const appliedAt = new Date().toISOString();
   const entries = await Promise.all(operations.map(async (operation) => ({
@@ -205,6 +234,9 @@ async function buildChanges(
   }
   for (const operation of operations.filter((item) => item.kind === "watchlist-movie")) {
     byId.set(operation.imdb, buildVisibleMovie(byId.get(operation.imdb), operation.imdb, operation.title ?? operation.imdb));
+  }
+  for (const operation of operations.filter((item) => item.kind === "watchlist-series")) {
+    byId.set(operation.imdb, buildVisibleSeries(byId.get(operation.imdb), operation.imdb, operation.title ?? operation.imdb));
   }
 
   const episodeOperations = operations.filter((item) => item.kind === "watched-episode");

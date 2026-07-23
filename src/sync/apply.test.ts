@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activateWorkerSync, applyWorkerSync, buildTraktHistoryPayload } from "./apply.js";
+import {
+  activateWorkerSync,
+  applyWorkerSync,
+  buildTraktHistoryPayload,
+  buildTraktWatchlistPayload
+} from "./apply.js";
 import type { D1DatabaseLike } from "../storage/d1.js";
 
 test("refuses apply in preview-only mode before any external request", async () => {
@@ -45,6 +50,19 @@ test("groups Stremio watched operations into a Trakt history payload", () => {
         { number: 2, episodes: [{ number: 1 }] }
       ]
     }]
+  });
+});
+
+test("groups visible Stremio Library items into a Trakt watchlist payload", () => {
+  const payload = buildTraktWatchlistPayload([
+    { direction: "stremio-to-trakt", kind: "watchlist-movie", imdb: "tt-movie", title: "Movie" },
+    { direction: "stremio-to-trakt", kind: "watchlist-series", imdb: "tt-show", title: "Show" },
+    { direction: "trakt-to-stremio", kind: "watchlist-movie", imdb: "tt-other", title: "Other" }
+  ]);
+
+  assert.deepEqual(payload, {
+    movies: [{ ids: { imdb: "tt-movie" } }],
+    shows: [{ ids: { imdb: "tt-show" } }]
   });
 });
 

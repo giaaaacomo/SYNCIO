@@ -6,6 +6,7 @@ import {
   refreshTraktToken,
   startTraktDeviceAuthorization
 } from "./device-oauth.js";
+import { TraktApiError } from "./api-error.js";
 
 test("starts device authorization with the client id", async () => {
   let requestBody: unknown;
@@ -55,6 +56,22 @@ test("reads the verified Trakt username", async () => {
     return Response.json({ user: { username: "test_account" } });
   });
   assert.deepEqual(identity, { username: "test_account" });
+});
+
+test("preserves Trakt Retry-After on account rate limits", async () => {
+  await assert.rejects(
+    () => fetchTraktIdentity(
+      "client-id",
+      "access-token",
+      async () => new Response(null, { status: 429, headers: { "retry-after": "37" } })
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof TraktApiError);
+      assert.equal(error.status, 429);
+      assert.equal(error.retryAfterSeconds, 37);
+      return true;
+    }
+  );
 });
 
 test("refreshes Trakt tokens with the app redirect URI", async () => {

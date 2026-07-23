@@ -18,7 +18,7 @@ import { decodeWatchedField } from "./watched-bitfield.js";
 
 export interface BaselineOperation {
   direction: "trakt-to-stremio" | "stremio-to-trakt";
-  kind: "watched-movie" | "watched-episode" | "watchlist-movie" | "rating-movie";
+  kind: "watched-movie" | "watched-episode" | "watchlist-movie" | "watchlist-series" | "rating-movie";
   imdb: string;
   title: string | null;
   season?: number;
@@ -59,7 +59,8 @@ export async function previewWorkerSync(input: {
     watchedShows,
     watchedEpisodeHistoryPage,
     initialRatedMoviesPage,
-    watchlistMovies
+    watchlistMoviePages,
+    watchlistShowPages
   ] = await Promise.all([
     fetchStremioIdentity(credentials.stremio.authKey, input.fetcher, input.stremioApiBase),
     fetchTraktIdentity(credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase),
@@ -90,8 +91,23 @@ export async function previewWorkerSync(input: {
       )
       : Promise.resolve({ items: [], page: 1, pageCount: 1, itemCount: 0 }),
     settings.libraryWatchlistEnabled
-      ? traktGet("/sync/watchlist/movies", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase)
-      : Promise.resolve([])
+      ? traktGetAllPages(
+        "/sync/watchlist/movies",
+        credentials.trakt.clientId,
+        credentials.trakt.accessToken,
+        input.fetcher,
+        input.traktApiBase
+      )
+      : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 }),
+    settings.libraryWatchlistEnabled
+      ? traktGetAllPages(
+        "/sync/watchlist/shows",
+        credentials.trakt.clientId,
+        credentials.trakt.accessToken,
+        input.fetcher,
+        input.traktApiBase
+      )
+      : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 })
   ]);
   if (stremioIdentity.userId !== credentials.stremio.userId) throw new Error("Stremio account guard failed during preview.");
   if (traktIdentity.username !== credentials.trakt.username) throw new Error("Trakt account guard failed during preview.");
@@ -121,7 +137,8 @@ export async function previewWorkerSync(input: {
     watchedMovies,
     watchedShows,
     watchedEpisodeHistory,
-    watchlistMovies,
+    watchlistMovies: watchlistMoviePages.items,
+    watchlistShows: watchlistShowPages.items,
     videoSets
   });
   const ratingPlan = settings.ratingSyncEnabled
@@ -158,7 +175,10 @@ export async function previewWorkerSync(input: {
       traktRatedMovies: ratedMoviesPage.itemCount,
       traktRatedMoviesPage: ratedMoviesPage.page,
       traktRatedMoviesChecked: ratingPlan.checked,
-      traktWatchlistMovies: arrayValue(watchlistMovies).length
+      traktWatchlistMovies: watchlistMoviePages.itemCount,
+      traktWatchlistMoviePages: watchlistMoviePages.pagesFetched,
+      traktWatchlistShows: watchlistShowPages.itemCount,
+      traktWatchlistShowPages: watchlistShowPages.pagesFetched
     },
     operations: {
       total: operations.length,
@@ -254,16 +274,25 @@ export async function buildBaselinePlan(input: {
   watchedShows?: unknown;
   watchedEpisodeHistory?: unknown;
   watchlistMovies: unknown;
+  watchlistShows?: unknown;
   videoSets?: CinemetaVideoSet[];
 }): Promise<BaselineOperation[]> {
   const stremioWatched = new Map(
     input.library.filter((item) => item.type === "movie" && isStremioMovieWatched(item)).map((item) => [item._id, item])
   );
-  const visibleLibraryIds = new Set(
-    input.library.filter((item) => item.removed === false && item.temp === false).map((item) => item._id)
+  const visibleLibraryMovies = new Map(
+    input.library
+      .filter((item) => item.type === "movie" && isVisibleLibraryItem(item) && isImdbId(item._id))
+      .map((item) => [item._id, item])
+  );
+  const visibleLibraryShows = new Map(
+    input.library
+      .filter((item) => item.type === "series" && isVisibleLibraryItem(item) && isImdbId(item._id))
+      .map((item) => [item._id, item])
   );
   const traktWatched = mediaMap(input.watchedMovies, "movie");
-  const traktWatchlist = mediaMap(input.watchlistMovies, "movie");
+  const traktWatchlistMovies = mediaMap(input.watchlistMovies, "movie");
+  const traktWatchlistShows = mediaMap(input.watchlistShows, "show");
   const operations: BaselineOperation[] = [];
 
   for (const [imdb, movie] of traktWatched) {
@@ -282,12 +311,36 @@ export async function buildBaselinePlan(input: {
       title: stringOrNull(movie.name)
     });
   }
-  for (const [imdb, movie] of traktWatchlist) {
-    if (!visibleLibraryIds.has(imdb)) operations.push({
+  for (const [imdb, movie] of traktWatchlistMovies) {
+    if (!visibleLibraryMovies.has(imdb)) operations.push({
       direction: "trakt-to-stremio",
       kind: "watchlist-movie",
       imdb,
       title: stringOrNull(movie.title)
+    });
+  }
+  for (const [imdb, movie] of visibleLibraryMovies) {
+    if (!traktWatchlistMovies.has(imdb)) operations.push({
+      direction: "stremio-to-trakt",
+      kind: "watchlist-movie",
+      imdb,
+      title: stringOrNull(movie.name)
+    });
+  }
+  for (const [imdb, show] of traktWatchlistShows) {
+    if (!visibleLibraryShows.has(imdb)) operations.push({
+      direction: "trakt-to-stremio",
+      kind: "watchlist-series",
+      imdb,
+      title: stringOrNull(show.title)
+    });
+  }
+  for (const [imdb, show] of visibleLibraryShows) {
+    if (!traktWatchlistShows.has(imdb)) operations.push({
+      direction: "stremio-to-trakt",
+      kind: "watchlist-series",
+      imdb,
+      title: stringOrNull(show.name)
     });
   }
   operations.push(...await episodeOperations(
@@ -411,6 +464,14 @@ function mediaMap(value: unknown, field: string): Map<string, Record<string, unk
 
 function isStremioMovieWatched(item: StremioLibraryItem): boolean {
   return Number(item.state?.flaggedWatched ?? 0) > 0 || Number(item.state?.timesWatched ?? 0) > 0;
+}
+
+function isVisibleLibraryItem(item: StremioLibraryItem): boolean {
+  return item.removed === false && item.temp === false;
+}
+
+function isImdbId(value: string): boolean {
+  return /^tt\d+$/.test(value);
 }
 
 function arrayValue(value: unknown): unknown[] {

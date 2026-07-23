@@ -304,6 +304,14 @@ Status: live probes started on 2026-07-17 with a dedicated Stremio/Trakt test ac
 - PASS: an existing Matrix rating mismatch was left pending before the next hourly trigger: Trakt `8/10` mapped to Stremio `liked`, while Stremio still reported `loved`.
 - PASS: the 04:00 local hourly run was persisted as `scheduled` and `succeeded` with exactly one planned change, without a manual sync invocation.
 - PASS: direct post-cron verification reported Matrix as `liked`; the following seven hourly runs succeeded with zero planned changes, confirming stable idempotence.
+- Added additive bidirectional Stremio Library/Trakt Watchlist planning and apply for IMDb movies and series.
+- Trakt watchlist additions preserve existing Stremio movie watched markers and series episode bitfields; Stremio Library additions use Trakt `/sync/watchlist`, separate from watched-history writes.
+- Non-IMDb Stremio Library items are ignored for Trakt Watchlist export, and removals remain disabled.
+- Added bounded 250-item pagination for Trakt movie/show Watchlist reads.
+- Added Trakt `429` propagation with `Retry-After`; the configure page disables preview retries and renders the cooldown.
+- PASS: staging read-only preview planned exactly one new operation, adding visible Stremio Library movie Ava to the Trakt Watchlist.
+- PASS: guarded Live activation applied Ava through Trakt `/sync/watchlist`, persisted the ledger operation, and armed the hourly scheduler with the exact preview fingerprint.
+- PASS: direct Trakt verification returned Interstellar and Ava in the movie Watchlist, both already visible in Stremio.
 - PASS: GitHub CI runs all Worker and research tests, both typechecks, and a Wrangler deployment dry-run.
 
 ## Open Questions

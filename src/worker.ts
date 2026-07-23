@@ -24,9 +24,9 @@ import { runScheduledSync } from "./sync/scheduled.js";
 import {
   fetchTraktIdentity,
   pollTraktDeviceAuthorization,
-  startTraktDeviceAuthorization,
-  TraktApiError
+  startTraktDeviceAuthorization
 } from "./trakt/device-oauth.js";
+import { TraktApiError } from "./trakt/api-error.js";
 
 interface Env {
   SYNCIO_DB?: unknown;
@@ -145,7 +145,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
       }));
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : "Live sync activation failed." }, 409);
+      return syncErrorResponse(error, "Live sync activation failed.", 409);
     }
   }
 
@@ -167,7 +167,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
       }));
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : "Sync apply failed." }, 409);
+      return syncErrorResponse(error, "Sync apply failed.", 409);
     }
   }
 
@@ -187,7 +187,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         mode: "manual"
       }));
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : "Sync run failed." }, 500);
+      return syncErrorResponse(error, "Sync run failed.", 500);
     }
   }
 
@@ -249,7 +249,7 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
         cinemetaVideoIdsBase: env.CINEMETA_VIDEO_IDS_BASE
       }));
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : "Sync preview failed." }, 500);
+      return syncErrorResponse(error, "Sync preview failed.", 500);
     }
   }
 
@@ -556,8 +556,22 @@ function terminalTraktMessage(kind: "invalid" | "used" | "expired" | "denied"): 
 }
 
 function externalServiceError(error: unknown, fallback: string): Response {
+  if (error instanceof TraktApiError && error.status === 429) return traktRateLimitResponse(error);
   const status = error instanceof TraktApiError && error.status >= 500 ? 502 : 500;
   return json({ error: error instanceof Error ? error.message : fallback }, status);
+}
+
+function syncErrorResponse(error: unknown, fallback: string, status: number): Response {
+  if (error instanceof TraktApiError && error.status === 429) return traktRateLimitResponse(error);
+  return json({ error: error instanceof Error ? error.message : fallback }, status);
+}
+
+function traktRateLimitResponse(error: TraktApiError): Response {
+  const retryAfterSeconds = error.retryAfterSeconds;
+  const message = retryAfterSeconds
+    ? `Trakt rate limit reached. Retry in ${retryAfterSeconds} seconds.`
+    : "Trakt rate limit reached. Try again later.";
+  return json({ error: message, retryAfterSeconds }, 429);
 }
 
 function summarizeConnection(connection: ConnectionRecord | null) {
@@ -898,6 +912,25 @@ function configurePage(origin: string): string {
       byId("setup-access-result").textContent = message;
     }
 
+    function showRateLimitCountdown(button, result, body) {
+      let remaining = Number(body.retryAfterSeconds);
+      if (!Number.isFinite(remaining) || remaining <= 0) return false;
+      remaining = Math.ceil(remaining);
+      button.disabled = true;
+      const update = () => {
+        if (remaining <= 0) {
+          button.disabled = false;
+          result.textContent = "Trakt is ready. Run the preview again.";
+          return;
+        }
+        result.textContent = "Trakt rate limit reached. Retry available in " + remaining + " seconds.";
+        remaining -= 1;
+        setTimeout(update, 1000);
+      };
+      update();
+      return true;
+    }
+
     async function refreshStatus() {
       const { response, body } = await setupApi("/api/setup/status");
       if (!response.ok) throw new Error(body.error || "Status failed");
@@ -1070,7 +1103,9 @@ function configurePage(origin: string): string {
       output.classList.add("hidden");
       const { response, body } = await setupApi("/api/sync/preview");
       if (!response.ok) {
-        result.textContent = body.error || "Preview failed";
+        if (!showRateLimitCountdown(byId("sync-preview"), result, body)) {
+          result.textContent = body.error || "Preview failed";
+        }
         return;
       }
       const totalDifferences = body.operations.totalDifferences ?? body.operations.total;

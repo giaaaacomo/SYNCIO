@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildVisibleMovie, buildWatchedSeries } from "./library-changes.js";
+import { buildVisibleMovie, buildVisibleSeries, buildWatchedSeries } from "./library-changes.js";
 
 test("making a movie visible preserves its watched state", () => {
   const change = buildVisibleMovie({
@@ -15,6 +15,22 @@ test("making a movie visible preserves its watched state", () => {
   assert.equal(change.removed, false);
   assert.equal(change.temp, false);
   assert.equal(change.state?.flaggedWatched, 1);
+});
+
+test("making a series visible preserves its episode watched state", () => {
+  const change = buildVisibleSeries({
+    _id: "tt2",
+    name: "Series",
+    type: "series",
+    removed: true,
+    temp: true,
+    state: { watched: "episode-bitfield", flaggedWatched: 0 }
+  }, "tt2", "Series");
+
+  assert.equal(change.removed, false);
+  assert.equal(change.temp, false);
+  assert.equal(change.state?.watched, "episode-bitfield");
+  assert.equal(change.state?.flaggedWatched, 0);
 });
 
 test("episode updates preserve visible series membership without flagging the whole show", () => {

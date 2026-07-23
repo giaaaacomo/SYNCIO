@@ -3,23 +3,30 @@ import assert from "node:assert/strict";
 import { buildBaselinePlan, mapTraktRating, MAX_OPERATIONS_PER_RUN, operationBatch } from "./preview.js";
 import { encodeWatchedField } from "./watched-bitfield.js";
 
-test("plans movie history in both directions and watchlist additions without removals", async () => {
+test("plans movie history and additive Library/Watchlist sync in both directions", async () => {
   const plan = await buildBaselinePlan({
     library: [
       { _id: "tt-stremio", name: "From Stremio", type: "movie", removed: true, temp: true, state: { flaggedWatched: 1 } },
-      { _id: "tt-visible", name: "Already visible", type: "movie", removed: false, temp: false, state: {} }
+      { _id: "tt0000001", name: "Already visible", type: "movie", removed: false, temp: false, state: {} },
+      { _id: "tt0000002", name: "Movie from Library", type: "movie", removed: false, temp: false, state: {} },
+      { _id: "tt0000003", name: "Series from Library", type: "series", removed: false, temp: false, state: {} },
+      { _id: "kitsu:1", name: "Unsupported ID", type: "series", removed: false, temp: false, state: {} }
     ],
     watchedMovies: [{ movie: { title: "From Trakt", ids: { imdb: "tt-trakt" } } }],
     watchlistMovies: [
-      { movie: { title: "Already visible", ids: { imdb: "tt-visible" } } },
-      { movie: { title: "Add to Library", ids: { imdb: "tt-watchlist" } } }
-    ]
+      { movie: { title: "Already visible", ids: { imdb: "tt0000001" } } },
+      { movie: { title: "Add to Library", ids: { imdb: "tt0000004" } } }
+    ],
+    watchlistShows: [{ show: { title: "Series from Trakt", ids: { imdb: "tt0000005" } } }]
   });
 
   assert.deepEqual(plan, [
     { direction: "trakt-to-stremio", kind: "watched-movie", imdb: "tt-trakt", title: "From Trakt" },
     { direction: "stremio-to-trakt", kind: "watched-movie", imdb: "tt-stremio", title: "From Stremio" },
-    { direction: "trakt-to-stremio", kind: "watchlist-movie", imdb: "tt-watchlist", title: "Add to Library" }
+    { direction: "trakt-to-stremio", kind: "watchlist-movie", imdb: "tt0000004", title: "Add to Library" },
+    { direction: "stremio-to-trakt", kind: "watchlist-movie", imdb: "tt0000002", title: "Movie from Library" },
+    { direction: "trakt-to-stremio", kind: "watchlist-series", imdb: "tt0000005", title: "Series from Trakt" },
+    { direction: "stremio-to-trakt", kind: "watchlist-series", imdb: "tt0000003", title: "Series from Library" }
   ]);
 });
 

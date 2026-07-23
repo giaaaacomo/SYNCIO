@@ -8,7 +8,7 @@ SYNCIO is a self-hosted TypeScript project for deep Stremio <-> Trakt synchroniz
 > [!IMPORTANT]
 > Version 0.1.0 is a technical preview. Start with isolated test accounts and inspect the full read-only preview before activating live synchronization. Removals are intentionally unsupported.
 
-This repository started with **Milestone 0** research probes that verify undocumented or weakly documented behavior. It now contains a self-hosted Cloudflare Worker with guarded watched reconciliation, rating mapping, watchlist import, D1 state, and hourly test scheduling.
+This repository started with **Milestone 0** research probes that verify undocumented or weakly documented behavior. It now contains a self-hosted Cloudflare Worker with guarded watched reconciliation, rating mapping, additive Library/Watchlist synchronization, D1 state, and hourly scheduling.
 
 Research probes cover:
 
@@ -131,7 +131,9 @@ The Worker has a small typed D1 adapter in `src/storage/d1.ts`. `/status.json` a
 
 Production is self-hosted: every user deploys their own Worker/D1 and creates their own Trakt application during onboarding. There is no shared production Trakt app and no hosted-by-us sync service planned.
 
-The Worker engine supports identity-checked previews, fingerprint-confirmed bidirectional watched applies, paged Trakt-to-Stremio rating mapping, a D1 change ledger, persisted run status, and an hourly guarded scheduler. Runs are limited to 250 deterministic operations and continue converging on later hours when a backlog remains.
+The Worker engine supports identity-checked previews, fingerprint-confirmed bidirectional watched applies, additive bidirectional Stremio Library/Trakt Watchlist synchronization for IMDb movies and series, paged Trakt-to-Stremio rating mapping, a D1 change ledger, persisted run status, and an hourly guarded scheduler. Library/Watchlist removals remain intentionally disabled. Runs are limited to 250 deterministic operations and continue converging on later hours when a backlog remains.
+
+Trakt `429` responses preserve the server-provided `Retry-After` delay. The configure page pauses preview retries and shows the remaining cooldown instead of repeatedly calling the API.
 
 Live mode cannot be enabled by changing ordinary settings. Activation requires Preview only mode, the exact current preview fingerprint, the explicit `ENABLE SYNCIO` confirmation, and a successful first apply. Only then is the hourly scheduler armed. Switching back to Preview only clears that activation immediately.
 

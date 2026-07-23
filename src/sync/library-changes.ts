@@ -15,6 +15,20 @@ export function buildVisibleMovie(
   return touch(item);
 }
 
+export function buildVisibleSeries(
+  existing: StremioLibraryItem | undefined,
+  id: string,
+  name: string
+): StremioLibraryItem {
+  const item = cloneOrCreate(existing, id, "series", name, false);
+  item.removed = false;
+  item.temp = false;
+  item.name = name;
+  item.state = structuredClone(item.state ?? {});
+  item.state.noNotif = false;
+  return touch(item);
+}
+
 export function buildWatchedMovie(
   existing: StremioLibraryItem | undefined,
   id: string,
