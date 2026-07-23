@@ -1,9 +1,12 @@
 import type { D1DatabaseLike } from "../d1";
 
+export type TraktAuthMode = "direct-oauth" | "stremio-delegated";
+
 export interface ConnectionRecord {
   userId: string;
   stremioAuthCiphertext: string | null;
   stremioUserId: string | null;
+  traktAuthMode: TraktAuthMode;
   traktClientIdCiphertext: string | null;
   traktClientSecretCiphertext: string | null;
   traktRedirectUri: string | null;
@@ -19,6 +22,7 @@ export interface ConnectionRecord {
 export interface ConnectionUpsert {
   stremioAuthCiphertext?: string | null;
   stremioUserId?: string | null;
+  traktAuthMode?: TraktAuthMode;
   traktClientIdCiphertext?: string | null;
   traktClientSecretCiphertext?: string | null;
   traktRedirectUri?: string | null;
@@ -32,6 +36,7 @@ export interface ConnectionUpsert {
 export async function getConnection(db: D1DatabaseLike, userId: string): Promise<ConnectionRecord | null> {
   const row = await db
     .prepare(`SELECT user_id, stremio_auth_ciphertext, stremio_user_id,
+      trakt_auth_mode,
       trakt_client_id_ciphertext, trakt_client_secret_ciphertext, trakt_redirect_uri,
       trakt_access_ciphertext, trakt_refresh_ciphertext, trakt_expires_at, trakt_username,
       encryption_version, created_at, updated_at
@@ -51,6 +56,7 @@ export async function upsertConnection(
   const next = {
     stremioAuthCiphertext: resolveField(input, "stremioAuthCiphertext", existing?.stremioAuthCiphertext),
     stremioUserId: resolveField(input, "stremioUserId", existing?.stremioUserId),
+    traktAuthMode: input.traktAuthMode ?? existing?.traktAuthMode ?? "direct-oauth",
     traktClientIdCiphertext: resolveField(input, "traktClientIdCiphertext", existing?.traktClientIdCiphertext),
     traktClientSecretCiphertext: resolveField(input, "traktClientSecretCiphertext", existing?.traktClientSecretCiphertext),
     traktRedirectUri: resolveField(input, "traktRedirectUri", existing?.traktRedirectUri),
@@ -63,14 +69,16 @@ export async function upsertConnection(
 
   await db
     .prepare(`INSERT INTO connections (
-      user_id, stremio_auth_ciphertext, stremio_user_id, trakt_client_id_ciphertext, trakt_client_secret_ciphertext,
+      user_id, stremio_auth_ciphertext, stremio_user_id, trakt_auth_mode,
+      trakt_client_id_ciphertext, trakt_client_secret_ciphertext,
       trakt_redirect_uri,
       trakt_access_ciphertext, trakt_refresh_ciphertext, trakt_expires_at, trakt_username,
       encryption_version, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
       stremio_auth_ciphertext = excluded.stremio_auth_ciphertext,
       stremio_user_id = excluded.stremio_user_id,
+      trakt_auth_mode = excluded.trakt_auth_mode,
       trakt_client_id_ciphertext = excluded.trakt_client_id_ciphertext,
       trakt_client_secret_ciphertext = excluded.trakt_client_secret_ciphertext,
       trakt_redirect_uri = excluded.trakt_redirect_uri,
@@ -84,6 +92,7 @@ export async function upsertConnection(
       userId,
       next.stremioAuthCiphertext,
       next.stremioUserId,
+      next.traktAuthMode,
       next.traktClientIdCiphertext,
       next.traktClientSecretCiphertext,
       next.traktRedirectUri,
@@ -107,6 +116,7 @@ function parseConnection(row: Record<string, unknown>): ConnectionRecord {
     userId: requiredString(row.user_id, "connections.user_id"),
     stremioAuthCiphertext: nullableString(row.stremio_auth_ciphertext, "connections.stremio_auth_ciphertext"),
     stremioUserId: nullableString(row.stremio_user_id, "connections.stremio_user_id"),
+    traktAuthMode: parseTraktAuthMode(row.trakt_auth_mode),
     traktClientIdCiphertext: nullableString(row.trakt_client_id_ciphertext, "connections.trakt_client_id_ciphertext"),
     traktClientSecretCiphertext: nullableString(row.trakt_client_secret_ciphertext, "connections.trakt_client_secret_ciphertext"),
     traktRedirectUri: nullableString(row.trakt_redirect_uri, "connections.trakt_redirect_uri"),
@@ -120,13 +130,24 @@ function parseConnection(row: Record<string, unknown>): ConnectionRecord {
   };
 }
 
-function resolveField(input: ConnectionUpsert, key: keyof ConnectionUpsert, existing: string | null | undefined): string | null {
+type ConnectionStringField = Exclude<keyof ConnectionUpsert, "encryptionVersion" | "traktAuthMode">;
+
+function resolveField(
+  input: ConnectionUpsert,
+  key: ConnectionStringField,
+  existing: string | null | undefined
+): string | null {
   if (Object.prototype.hasOwnProperty.call(input, key)) {
     const value = input[key];
     if (typeof value === "string") return value;
     return null;
   }
   return existing ?? null;
+}
+
+function parseTraktAuthMode(value: unknown): TraktAuthMode {
+  if (value === "direct-oauth" || value === "stremio-delegated") return value;
+  throw new Error("connections.trakt_auth_mode is invalid.");
 }
 
 function requiredString(value: unknown, label: string): string {

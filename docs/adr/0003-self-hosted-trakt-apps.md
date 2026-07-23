@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by ADR 0005 for the default onboarding path. Direct OAuth remains an accepted fallback.
 
 ## Context
 

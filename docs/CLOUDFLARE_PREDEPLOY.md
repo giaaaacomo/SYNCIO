@@ -9,7 +9,7 @@ SYNCIO has been validated on a staging Cloudflare Worker and is being prepared a
 - D1 storage adapter: `src/storage/d1.ts`
 - D1 repositories: `src/storage/repositories/users.ts`, `src/storage/repositories/connections.ts`
 - AES-GCM secret helper: `src/crypto/secrets.ts`
-- Migrations: `migrations/0001_initial.sql`, `migrations/0002_sync_cursors.sql`
+- Migrations: `migrations/0001_initial.sql` through `migrations/0004_trakt_auth_mode.sql`
 - Generic Wrangler config: `wrangler.jsonc`
 - Worker checks:
 
@@ -33,6 +33,7 @@ corepack pnpm run worker:test
 - `POST /api/setup/trakt-app`
 - `POST /api/setup/trakt/start`
 - `POST /api/setup/trakt/poll`
+- `POST /api/setup/trakt-mode`
 - `POST /api/setup/stremio`
 - `GET /api/sync/preview` runs an authenticated, read-only account baseline for watched history, Library/Watchlist, and movie/series rating differences.
 - `POST /api/sync/apply` applies only an exact fingerprint in Test or activated Live mode.
@@ -45,7 +46,7 @@ The setup routes use the self-host installation id internally, require `Authoriz
 
 Cloudflare can clone the public repository, provision D1 from the ID-free binding in `wrangler.jsonc`, and deploy the Worker. The repository's deploy script applies migrations by binding name.
 
-The user still supplies two independent secrets during deployment and creates a user-owned Trakt app during `/configure`. SYNCIO never receives those values on maintainer-controlled infrastructure.
+The user still supplies two independent secrets during deployment. The default `/configure` path reuses the Trakt authorization already linked in Stremio and does not require a new Trakt app. SYNCIO never receives those values on maintainer-controlled infrastructure.
 
 The Deploy to Cloudflare form reads `.dev.vars.example` and the required-secret declarations from `wrangler.jsonc`, then asks for exactly `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN`. Both can be independent random password-manager values of at least 32 characters. Base64-encoded 32-byte keys remain supported.
 
@@ -67,7 +68,8 @@ The first value is `SYNCIO_ENCRYPTION_KEY`; the second is `SYNCIO_SETUP_TOKEN`. 
 - Wrangler can create a D1 database and print the database ID.
 - Generate `SYNCIO_ENCRYPTION_KEY` as either 32 random bytes encoded as base64/base64url or an independent random password-manager value of at least 32 characters.
 - Generate an independent high-entropy `SYNCIO_SETUP_TOKEN`, for example with `openssl rand -base64 48`. Do not reuse the encryption key.
-- Trakt's current Device OAuth token endpoint requires both the app client id and client secret.
+- Delegated Trakt mode uses Stremio's public client identity and fetches the current access grant from Stremio for each run. It does not persist Trakt OAuth tokens.
+- Optional direct mode uses Trakt Device OAuth, whose token endpoint requires both the app client id and client secret.
 - Stremio account writes rely on Stremio's internal account API, not the public Addon SDK contract. Account identity is verified before an auth key is accepted.
 - The free Workers plan currently allows 50 external subrequests per invocation. Cinemeta lookups and Stremio rating checks are batched, Trakt collections use bounded pagination, and the sync interval is one hour.
 - Each run applies at most 250 logical differences. Ledger entries are inserted in grouped D1 queries to keep first imports within free-tier query limits.

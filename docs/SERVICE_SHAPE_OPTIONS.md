@@ -34,8 +34,8 @@ Runs as a Stremio addon manifest and exposes catalogs/resources to the client.
 Build SYNCIO as an addon-first product backed by a self-hosted Cloudflare sync engine.
 
 - The addon manifest is the installable Stremio entrypoint.
-- The configure page links Stremio and Trakt accounts, stores user-level sync preferences, and guides creation of a user-owned Trakt application.
-- The user-owned Worker performs scheduled sync, dedupe, OAuth refresh, and conflict handling.
+- The configure page links Stremio, verifies the expected Trakt account, and stores user-level sync preferences.
+- The user-owned Worker performs scheduled sync, dedupe, identity guards, and conflict handling. Delegated mode retrieves the current Trakt access grant from Stremio for every run; optional direct mode manages its own OAuth refresh.
 - Production does not use a shared SYNCIO Trakt app and does not offer hosted-by-us sync.
 - The local CLI remains a development harness for probes and regression tests.
 

@@ -15,6 +15,7 @@ test("upserts a per-user Trakt app connection without a global client id", async
   assert.equal(saved.userId, "user_1");
   assert.equal(saved.traktClientIdCiphertext, "v1.iv.client");
   assert.equal(saved.traktClientSecretCiphertext, "v1.iv.secret");
+  assert.equal(saved.traktAuthMode, "direct-oauth");
   assert.equal(saved.traktAccessCiphertext, null);
   assert.equal(saved.createdAt, "2026-07-20T00:00:00.000Z");
 });
@@ -27,12 +28,14 @@ test("preserves existing connection fields across partial updates", async () => 
   }, "2026-07-20T00:00:00.000Z");
 
   const updated = await upsertConnection(db, "user_1", {
+    traktAuthMode: "stremio-delegated",
     traktRefreshCiphertext: "v1.iv.refresh",
     traktExpiresAt: "2026-07-21T00:00:00.000Z",
     encryptionVersion: 1
   }, "2026-07-20T00:05:00.000Z");
 
   assert.equal(updated.traktClientIdCiphertext, "v1.iv.client");
+  assert.equal(updated.traktAuthMode, "stremio-delegated");
   assert.equal(updated.traktRefreshCiphertext, "v1.iv.refresh");
   assert.equal(updated.createdAt, "2026-07-20T00:00:00.000Z");
   assert.equal(updated.updatedAt, "2026-07-20T00:05:00.000Z");
@@ -81,16 +84,17 @@ class MemoryD1 implements D1DatabaseLike {
             user_id: userId,
             stremio_auth_ciphertext: bound[1],
             stremio_user_id: bound[2],
-            trakt_client_id_ciphertext: bound[3],
-            trakt_client_secret_ciphertext: bound[4],
-            trakt_redirect_uri: bound[5],
-            trakt_access_ciphertext: bound[6],
-            trakt_refresh_ciphertext: bound[7],
-            trakt_expires_at: bound[8],
-            trakt_username: bound[9],
-            encryption_version: bound[10],
-            created_at: existing?.created_at ?? bound[11],
-            updated_at: bound[12]
+            trakt_auth_mode: bound[3],
+            trakt_client_id_ciphertext: bound[4],
+            trakt_client_secret_ciphertext: bound[5],
+            trakt_redirect_uri: bound[6],
+            trakt_access_ciphertext: bound[7],
+            trakt_refresh_ciphertext: bound[8],
+            trakt_expires_at: bound[9],
+            trakt_username: bound[10],
+            encryption_version: bound[11],
+            created_at: existing?.created_at ?? bound[12],
+            updated_at: bound[13]
           });
         }
         return { success: true };

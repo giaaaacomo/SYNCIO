@@ -2,9 +2,9 @@
 
 SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
 
-Each user deploys their own Cloudflare Worker + D1 database and creates their own Trakt application. SYNCIO code guides the setup, but the runtime that processes tokens and sync state belongs to the user.
+Each user deploys their own Cloudflare Worker + D1 database. By default, SYNCIO reuses the Trakt authorization already linked to the user's Stremio account. The runtime that processes credentials and sync state belongs to the user.
 
-Version 0.1.1 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
+Version 0.2.0 is a technical preview. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
 
 ## Intended User Flow
 
@@ -14,13 +14,15 @@ Version 0.1.1 is a technical preview. Begin with isolated test accounts and insp
 4. Generate independent random `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values of at least 32 characters with a password manager and enter both as Worker secrets.
 5. Let Cloudflare clone the repository, apply migrations, and deploy the Worker.
 6. Open the deployed `/configure` page.
-7. Create a Trakt application at `https://app.trakt.tv/settings/apps/api/new`.
-8. Paste the Trakt app client id and client secret.
-9. Link Trakt with Device OAuth.
-10. Link Stremio.
-11. Run a read-only full-account preview.
-12. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
-13. Install the generated manifest in Stremio.
+7. Link the Stremio account that already has the intended Trakt account connected.
+8. Enter the expected Trakt username and enable `Stremio Delegated`.
+9. Run a read-only full-account preview and confirm both account guards.
+10. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
+11. Install the generated manifest in Stremio.
+
+Delegated mode reads the current Trakt access grant from Stremio at the beginning of every run. It uses Stremio's public Trakt client identity for Trakt requests, keeps the access token only in memory, ignores the refresh token, and fails closed if the grant is absent, expired, or belongs to another account. Reconnect Trakt inside Stremio if that guard reports an expired grant.
+
+Direct OAuth remains available as an optional fallback. It requires a user-owned Trakt application, consumes a Trakt connected-app slot, and stores its encrypted OAuth tokens in D1.
 
 Each run applies at most 250 deterministic differences. Larger first imports converge over later hourly runs. Returning the mode to Preview only disarms live scheduling immediately. History removals remain disabled.
 
@@ -51,22 +53,19 @@ With this model, SYNCIO maintainers do not receive, store, or process user token
 The user's own Cloudflare project stores:
 
 - encrypted Stremio auth material;
-- encrypted Trakt OAuth tokens;
-- encrypted Trakt app credentials when needed;
 - sync settings;
 - sync run metadata and dedupe ledger.
 
-The user's Trakt account controls API authorization, and the user's Cloudflare account controls runtime/storage. There is no shared production Trakt app.
+Delegated mode does not store Trakt OAuth access or refresh tokens. Optional direct mode stores encrypted Trakt OAuth tokens and app credentials. The user's Trakt account controls API authorization, and the user's Cloudflare account controls runtime/storage. There is no shared SYNCIO Trakt app.
 
 ## One-Click Target
 
-The realistic target is not literally zero clicks because Cloudflare and Trakt both require user-owned authorization. The target is guided one-click per external action:
+The realistic target is not literally zero clicks because Cloudflare and Stremio require user-owned authorization. The target is guided one-click per external action:
 
 - one deploy button for repository cloning, D1 provisioning, migrations, and Worker creation;
 - two independent password-manager values entered directly into the user's Cloudflare deployment;
-- one Trakt app creation link with copyable callback/redirect values;
-- one encrypted Trakt app credential save;
-- one Device OAuth approval;
+- one Stremio account link;
+- one expected-Trakt-account confirmation;
 - one Stremio addon install link.
 
 Every setup page must show redacted readiness only, never raw tokens.
