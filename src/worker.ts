@@ -1036,10 +1036,16 @@ function configurePage(origin: string): string {
     }
     .step-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
     .step-heading p { margin: 4px 0 0; font-size: 0.9rem; }
+    .step-meta { display: grid; justify-items: end; gap: 8px; }
     .step-state { flex: none; padding-top: 2px; color: var(--muted); font-size: 0.78rem; font-weight: 750; }
+    .step-edit { display: none; min-height: 32px; padding: 5px 10px; font-size: 0.78rem; }
     .step-content { max-width: 560px; transition: opacity 160ms ease; }
     .step.is-complete .step-number { border-color: var(--success); background: var(--success-soft); color: var(--success); }
     .step.is-complete .step-state { color: var(--success); }
+    .step.step-collapsible.is-complete:not(.is-editing) .step-edit { display: inline-flex; }
+    .step.step-collapsible.is-complete:not(.is-editing) form,
+    .step.step-collapsible.is-complete:not(.is-editing) .step-description,
+    .step.step-collapsible.is-complete:not(.is-editing) .result { display: none; }
     .step.is-locked .step-content { pointer-events: none; opacity: 0.4; }
     .step.is-locked .step-state { color: var(--muted); }
     .step .result { min-height: 1.25em; margin: 12px 0 0; font-size: 0.88rem; }
@@ -1072,7 +1078,8 @@ function configurePage(origin: string): string {
       .step { grid-template-columns: 34px minmax(0, 1fr); gap: 12px; padding: 24px 0; }
       .step-number { width: 30px; height: 30px; }
       .step-heading { display: block; }
-      .step-state { display: block; margin-top: 4px; }
+      .step-meta { justify-items: start; margin-top: 6px; }
+      .step-edit { width: auto; }
       .settings { grid-template-columns: 1fr; }
       dl { grid-template-columns: 1fr; gap: 2px; }
       dd { margin-bottom: 8px; }
@@ -1113,15 +1120,18 @@ function configurePage(origin: string): string {
       <li id="progress-install">Install</li>
     </ol>
 
-    <section class="step protected hidden" id="step-stremio">
+    <section class="step step-collapsible protected hidden" id="step-stremio">
       <span class="step-number">1</span>
       <div class="step-content">
         <div class="step-heading">
           <div>
             <h2>Connect Stremio</h2>
-            <p>Use the account that already has Trakt connected.</p>
+            <p class="step-description">Use the account that already has Trakt connected.</p>
           </div>
-          <span class="step-state" id="step-stremio-state">Not connected</span>
+          <div class="step-meta">
+            <span class="step-state" id="step-stremio-state">Not connected</span>
+            <button class="step-edit secondary" type="button" data-edit-step="stremio">Edit</button>
+          </div>
         </div>
         <form id="stremio-form">
           <fieldset class="mode">
@@ -1141,15 +1151,18 @@ function configurePage(origin: string): string {
       </div>
     </section>
 
-    <section class="step protected hidden is-locked" id="step-trakt">
+    <section class="step step-collapsible protected hidden is-locked" id="step-trakt">
       <span class="step-number">2</span>
       <div class="step-content">
         <div class="step-heading">
           <div>
             <h2>Confirm Trakt</h2>
-            <p>Match the Trakt account connected inside Stremio.</p>
+            <p class="step-description">Match the Trakt account connected inside Stremio.</p>
           </div>
-          <span class="step-state" id="step-trakt-state">Waiting for Stremio</span>
+          <div class="step-meta">
+            <span class="step-state" id="step-trakt-state">Waiting for Stremio</span>
+            <button class="step-edit secondary" type="button" data-edit-step="trakt">Edit</button>
+          </div>
         </div>
         <form id="trakt-transport-form">
           <label>
@@ -1162,15 +1175,18 @@ function configurePage(origin: string): string {
       </div>
     </section>
 
-    <section class="step protected hidden is-locked" id="step-settings">
+    <section class="step step-collapsible protected hidden is-locked" id="step-settings">
       <span class="step-number">3</span>
       <div class="step-content">
         <div class="step-heading">
           <div>
             <h2>Choose what to sync</h2>
-            <p>Start with the recommended defaults.</p>
+            <p class="step-description">Start with the recommended defaults.</p>
           </div>
-          <span class="step-state" id="step-settings-state">Waiting for Trakt</span>
+          <div class="step-meta">
+            <span class="step-state" id="step-settings-state">Waiting for Trakt</span>
+            <button class="step-edit secondary" type="button" data-edit-step="settings">Edit</button>
+          </div>
         </div>
         <form id="sync-settings-form">
           <div class="settings">
@@ -1525,6 +1541,16 @@ function configurePage(origin: string): string {
       });
     });
 
+    document.querySelectorAll("[data-edit-step]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const stepName = button.dataset.editStep;
+        const step = byId("step-" + stepName);
+        step.classList.add("is-editing");
+        step.scrollIntoView({ behavior: "smooth", block: "start" });
+        step.querySelector("input, select")?.focus({ preventScroll: true });
+      });
+    });
+
     byId("stremio-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -1548,6 +1574,7 @@ function configurePage(origin: string): string {
         return;
       }
       result.textContent = "Stremio linked as " + (body.connections?.stremio?.userId || "verified account") + ".";
+      byId("step-stremio").classList.remove("is-editing");
       await refreshStatus();
       continueTo("trakt");
     });
@@ -1589,6 +1616,7 @@ function configurePage(origin: string): string {
       previewFingerprint = "";
       byId("sync-apply").classList.add("hidden");
       byId("live-activation").classList.add("hidden");
+      byId("step-trakt").classList.remove("is-editing");
       await refreshStatus();
       if (payload.mode === "stremio-delegated") continueTo("settings");
     }
@@ -1622,6 +1650,7 @@ function configurePage(origin: string): string {
         previewFingerprint = "";
         byId("sync-apply").classList.add("hidden");
         byId("live-activation").classList.add("hidden");
+        byId("step-settings").classList.remove("is-editing");
         updateFlow();
         continueTo("sync");
       }

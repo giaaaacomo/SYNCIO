@@ -49,7 +49,10 @@ test("keeps the delegated flow primary and direct Trakt controls advanced", asyn
   assert.ok(syncStep < installStep);
   assert.ok(installStep < advancedOptions);
   assert.match(body, /<ol class="progress protected hidden" aria-label="Setup progress">/);
-  assert.match(body, /class="step protected hidden is-locked" id="step-trakt"/);
+  assert.match(body, /class="step step-collapsible protected hidden is-locked" id="step-trakt"/);
+  assert.match(body, /data-edit-step="stremio"/);
+  assert.match(body, /data-edit-step="trakt"/);
+  assert.match(body, /data-edit-step="settings"/);
   assert.match(body, /Open in Stremio/);
   assert.ok(body.indexOf('id="trakt-app-status"') > advancedOptions);
   assert.ok(body.indexOf('id="trakt-app-form"') > advancedOptions);
