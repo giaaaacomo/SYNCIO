@@ -267,7 +267,7 @@ Status: live probes started on 2026-07-17 with a dedicated Stremio/Trakt test ac
 - PASS: the post-apply remote preview returned zero differences; D1 reports 40 ledger entries and zero conflicts.
 - PASS: a controlled Ava mismatch was exported Stremio-to-Trakt, increasing Trakt watched movies from one to two; the following preview returned zero and the ledger reached 41.
 - PASS: a Trakt 9/10 rating for Ava mapped to Stremio `loved`; direct rating verification and the following preview both passed, with 42 ledger entries total.
-- Added an hourly guarded Cloudflare cron plus persisted sync-run status. Preview mode performs no external calls, Test mode may apply a fresh fingerprint, and live-account scheduling remains disabled.
+- Added an hourly guarded Cloudflare cron plus persisted sync-run status. Preview mode performs no external calls and Test mode may apply a fresh fingerprint.
 - PASS: `TRAKT_CLIENT_ID` was added locally to `.env`.
 - PASS: the Stremio-provided Trakt OAuth token was tested with the SYNCIO app client ID and returned HTTP 401, so it cannot be reused safely by our app.
 - PASS: Stremio-provided Trakt tokens were removed from local `.env`; SYNCIO should use its own Trakt Device OAuth grant.
@@ -287,6 +287,21 @@ Status: live probes started on 2026-07-17 with a dedicated Stremio/Trakt test ac
 - PASS: Breaking Bad S01E01 / Pilot is present through `/sync/history/shows/1388`.
 - PASS: Interstellar (`tt0816692`) is in the movie watchlist.
 - Observation: `/sync/watched/shows` is useful as a show aggregate but does not expose the episode rows needed by the baseline probe. Use targeted history reads such as `/sync/history/shows/{traktId}` for episode-level verification.
+
+## Hosted Live Activation Validation
+
+- Published the self-host template as `giaaaacomo/SYNCIO` with an MIT license, generic D1 provisioning, required secrets, migrations, Deploy to Cloudflare button, and GitHub CI.
+- Added bounded Trakt episode-history pagination that fails explicitly instead of returning a partial account history.
+- Changed rating reconciliation to a persisted one-page scan with ten status lookups per run.
+- Limited every apply to 250 deterministic operations; larger backlogs converge over later runs.
+- Replaced one-ledger-query-per-operation with grouped JSON-backed D1 inserts, validated against SQLite.
+- Added live activation columns in migration `0003_live_sync_activation.sql`.
+- Live mode now requires Preview only mode, the exact SHA-256 preview fingerprint, `ENABLE SYNCIO`, and a successful first apply before the hourly scheduler is armed.
+- Ordinary settings updates cannot arm Live mode. Returning to Preview only clears the activation record.
+- Apply and scheduler independently require the persisted activation record in addition to `scope=account`.
+- PASS: staging activation on the isolated account applied zero changes, stored a 64-character fingerprint, and switched to armed account scope.
+- PASS: the first manual Live run planned and applied zero changes, completed without error, and was persisted as succeeded.
+- PASS: GitHub CI runs all Worker and research tests, both typechecks, and a Wrangler deployment dry-run.
 
 ## Open Questions
 
