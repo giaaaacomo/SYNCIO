@@ -59,6 +59,7 @@ test("keeps the delegated flow primary and direct Trakt controls advanced", asyn
   assert.ok(body.indexOf('id="trakt-link-start"') > advancedOptions);
   assert.ok(body.indexOf('id="trakt-use-direct"') > advancedOptions);
   assert.match(body, /<summary>Advanced sync settings<\/summary>[\s\S]*name="optionalCatalogsEnabled"/);
+  assert.match(body, /<fieldset class="threshold-group">[\s\S]*name="likeThreshold"[\s\S]*name="loveThreshold"[\s\S]*<\/fieldset>/);
 });
 
 test("reports redacted setup status for a self-host install", async () => {

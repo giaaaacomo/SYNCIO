@@ -1063,6 +1063,24 @@ function configurePage(origin: string): string {
     .settings label { display: flex; align-items: center; gap: 8px; }
     .settings input[type="checkbox"] { width: auto; min-height: 0; }
     .settings input[type="number"], .settings select { width: 100%; }
+    .threshold-group {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+    .threshold-group legend {
+      padding: 0 6px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 750;
+    }
+    .threshold-group label { display: grid; gap: 6px; }
     .inline-advanced { grid-column: 1 / -1; padding-top: 4px; }
     .inline-advanced summary { margin-bottom: 12px; font-size: 0.9rem; }
     .advanced-panel summary, .status-panel summary { padding: 4px 0; font-size: 0.95rem; }
@@ -1193,8 +1211,11 @@ function configurePage(origin: string): string {
             <label><input name="watchedEnabled" type="checkbox"> Watched history</label>
             <label><input name="ratingSyncEnabled" type="checkbox"> Ratings</label>
             <label><input name="libraryWatchlistEnabled" type="checkbox"> Watchlist to Library</label>
-            <label>Like threshold <input name="likeThreshold" type="number" min="1" max="9"></label>
-            <label>Love threshold <input name="loveThreshold" type="number" min="2" max="10"></label>
+            <fieldset class="threshold-group">
+              <legend>Rating thresholds</legend>
+              <label>Like <input name="likeThreshold" type="number" min="1" max="9"></label>
+              <label>Love <input name="loveThreshold" type="number" min="2" max="10"></label>
+            </fieldset>
             <details class="inline-advanced">
               <summary>Advanced sync settings</summary>
               <div class="settings">
