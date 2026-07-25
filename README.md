@@ -173,6 +173,7 @@ The relevant protected routes are `GET /api/setup/status`, `GET /api/setup/healt
 `GET /api/sync/preview` verifies both linked identities and plans watched, watchlist, and rating differences. Delegated runs fetch a fresh Stremio-held access grant; direct runs refresh their own expiring token. `POST /api/sync/activate` performs the guarded first live apply and arms scheduling. `POST /api/sync/apply` requires an active mode and the exact preview fingerprint. `POST /api/sync/run` invokes the same guarded pipeline used by the hourly cron.
 
 Read [docs/SELF_HOST_ONBOARDING.md](docs/SELF_HOST_ONBOARDING.md) and [docs/CLOUDFLARE_PREDEPLOY.md](docs/CLOUDFLARE_PREDEPLOY.md) before deploying.
+Release evidence and remaining manual client checks are tracked in [docs/BETA_ACCEPTANCE_AUDIT.md](docs/BETA_ACCEPTANCE_AUDIT.md).
 
 ## Research Notes
 

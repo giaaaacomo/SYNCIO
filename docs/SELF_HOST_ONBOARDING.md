@@ -22,7 +22,7 @@ Version 0.3.0 is a technical beta. Begin with isolated test accounts and inspect
 
 The configure page presents these actions as five ordered steps: Stremio, Trakt, sync settings, preview/activation, and installation. Later steps remain inactive until their prerequisites are ready, while completed account and settings forms collapse into editable summaries. System diagnostics and the Direct OAuth fallback stay collapsed below the main flow.
 
-Delegated mode reads the current Trakt access grant from Stremio at the beginning of every run. It uses Stremio's public Trakt client identity for Trakt requests, keeps the access token only in memory, ignores the refresh token, and fails closed if the grant is absent, expired, or belongs to another account. Reconnect Trakt inside Stremio if that guard reports an expired grant.
+Delegated mode reads the current Trakt access grant from Stremio at the beginning of every run. It uses Stremio's public Trakt client identity for Trakt requests, keeps the access token only in memory, ignores the refresh token, and fails closed if the grant is absent, expired, or belongs to another account. An isolated E2E deployment observed Stremio rotate the grant automatically before its July 2026 expiry, so periodic manual reconnection is not expected under the currently observed behavior. Reconnect Trakt inside Stremio only if the health guard reports a missing or expired grant.
 
 Direct OAuth remains available under the collapsed **Advanced options** section as an optional fallback. It requires a user-owned Trakt application, consumes a Trakt connected-app slot, and stores its encrypted OAuth tokens in D1. The same section contains direct-app readiness so the default status view stays focused on the delegated path.
 
@@ -81,6 +81,8 @@ The setup token is kept in browser `sessionStorage`, is sent only as a bearer he
 The collapsed **System status** section can verify the current Stremio and Trakt identities on demand. It reports the delegated Trakt grant expiry but never returns the access token. Every delegated and direct sync run repeats the appropriate account guard before reading or writing data.
 
 The same section lists the eight most recent scheduled or manual runs, including status, timestamp, planned operation count, and a bounded error message when a run fails.
+
+The current beta evidence and remaining client checks are tracked in [the beta acceptance audit](BETA_ACCEPTANCE_AUDIT.md).
 
 ## Data Lifecycle
 

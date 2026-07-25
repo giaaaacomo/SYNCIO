@@ -38,3 +38,9 @@ Direct OAuth remains available as a fallback for users who can create and connec
 - Account mismatches fail before synchronization writes.
 - Missing, stale, or near-expiry Stremio grants fail closed. The user may need to reconnect Trakt inside Stremio.
 - A Stremio or Trakt policy change can break delegated mode. Direct OAuth remains the recovery path.
+
+## Renewal Observation
+
+The isolated E2E account confirmed automatic grant rotation in July 2026. Its original grant was due to expire at `2026-07-24T17:46:04Z`; Stremio exposed a replacement created at `2026-07-24T17:00:41Z` and expiring at `2026-07-31T17:00:41Z`. The replacement passed the Trakt identity guard for the expected test account.
+
+This observation supports fetching the current grant at the beginning of every run instead of persisting it. It does not turn the account response into a supported public API contract, so the fail-closed health check and direct OAuth fallback remain necessary.
