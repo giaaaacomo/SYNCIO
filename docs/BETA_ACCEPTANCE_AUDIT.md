@@ -41,10 +41,12 @@ Use isolated accounts until all four client rows have been recorded in the relea
 
 | Client | Install | No rows | Watched marks | Library/calendar | Restart/account sync | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Web | Pending | Pending | Pending | Pending | Pending | Pending |
-| Desktop | Pending | Pending | Pending | Pending | Pending | Pending |
+| Web | Pass; installed card cached 0.2.2 while the live manifest served 0.3.0 | Pass | Pass; historical episodes remained watched and Silo's newly released episode remained unwatched | Not exercised; all test series were history-only | Pass | Partial pass |
+| Desktop | Pass | Pass | Pass; matched Web state | Not exercised; all test series were history-only | Pass | Partial pass |
 | Android | Pending | Pending | Pending | Pending | Pending | Pending |
 | Android TV | Pending | Pending | Pending | Pending | Pending | Pending |
+
+During Web validation, intermittent metadata and search failures named the Env and YouTube addons. SYNCIO exposes no catalogs or metadata resources, and its live manifest remained reachable, so those failures are not attributed to SYNCIO. Opening a history-only item while metadata was unavailable produced Stremio's "No metadata was found" placeholder; the same title resolved after the catalog recovered.
 
 ### Conflict semantics
 
