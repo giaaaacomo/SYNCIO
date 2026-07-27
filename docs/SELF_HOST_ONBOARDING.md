@@ -11,7 +11,7 @@ Version 0.3.1 is a public technical beta. Begin with isolated test accounts and 
 1. Open the SYNCIO deploy/setup page from the repository.
 2. Authorize the Deploy to Cloudflare flow against the user's Cloudflare and Git provider accounts.
 3. Choose the Worker, repository, and automatically provisioned D1 names.
-4. Generate independent random `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values with a password manager and enter both as Worker secrets. Do not invent memorable passwords: use at least 64 random characters for each value, and never reuse one value for both fields.
+4. Open the [SYNCIO secret generator](https://giaaaacomo.github.io/SYNCIO/secret-generator.html), copy its independent `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values into the Worker secret fields, and save both in a password manager. The static generator uses Web Crypto entirely in the browser and makes no network requests.
 5. Let Cloudflare clone the repository, apply migrations, and deploy the Worker.
 6. Open the deployed `/configure` page.
 7. Link the Stremio account that already has the intended Trakt account connected.

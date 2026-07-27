@@ -34,9 +34,10 @@ Using isolated test accounts for the first deployment is recommended. If you use
 1. Select **Deploy to Cloudflare** above.
 2. Give Cloudflare access to the new SYNCIO repository it creates in your Git account.
 3. Create a new D1 database in the deployment form.
-4. Generate and save two different random values of at least 32 characters:
+4. Open the [SYNCIO secret generator](https://giaaaacomo.github.io/SYNCIO/secret-generator.html), then generate and save two different random values:
    - `SYNCIO_ENCRYPTION_KEY` encrypts credentials stored in your D1 database.
    - `SYNCIO_SETUP_TOKEN` unlocks your private configure page.
+   The generator runs entirely in your browser and makes no network requests.
 5. Keep the default build command `pnpm run build` and deploy command `pnpm run deploy`.
 6. Deploy, then open the Worker URL and its `/configure` page.
 
