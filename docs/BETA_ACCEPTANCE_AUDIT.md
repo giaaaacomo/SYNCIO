@@ -44,7 +44,7 @@ Use isolated accounts until all four client rows have been recorded in the relea
 | Web | Pass; installed card cached 0.2.2 while the live manifest served 0.3.0 | Pass | Pass; historical episodes remained watched and Silo's newly released episode remained unwatched | Not exercised; all test series were history-only | Pass | Partial pass |
 | Desktop | Pass | Pass | Pass; matched Web state | Not exercised; all test series were history-only | Pass | Partial pass |
 | Android | Pass | Pass | Pass; Ava rating/watched and Silo episode state matched Web | Pass for Library; calendar was not exposed by the observed mobile UI | Pass | Pass; calendar N/A |
-| Android TV | Pending | Pending | Pending | Pending | Pending | Pending |
+| Android TV | Deferred post-beta | Deferred post-beta | Deferred post-beta | Deferred post-beta | Deferred post-beta | Non-blocking |
 
 During Web validation, intermittent metadata and search failures named the Env and YouTube addons. SYNCIO exposes no catalogs or metadata resources, and its live manifest remained reachable, so those failures are not attributed to SYNCIO. Opening a history-only item while metadata was unavailable produced Stremio's "No metadata was found" placeholder; the same title resolved after the catalog recovered.
 
@@ -52,9 +52,9 @@ The cross-direction live scenario added Dark to the Trakt Watchlist and imported
 
 ### Conflict semantics
 
-Watched state is an additive union, removals are disabled, and Trakt ratings are currently authoritative when both services already contain different values. These rules prevent the currently supported operations from oscillating, but they do not prove that both sides changed since the previous successful run.
+Watched state and Library/Watchlist membership remain additive unions, so their supported operations cannot conflict. Rating synchronization now uses the last successfully converged source snapshot. A change on one side propagates; equivalent changes on both sides converge; divergent simultaneous changes create an idempotent conflict and leave both services untouched.
 
-The `sync_conflicts` table is available for lifecycle export and future conflict records, but simultaneous-change detection needs persisted source snapshots or equivalent revision evidence. This is an explicit beta gap, not a completed feature. It must be designed before any destructive sync or bidirectional removal policy is introduced.
+The initial baseline keeps existing Trakt ratings authoritative, including native values between thresholds. Snapshots advance only after a successful apply, and a later manual alignment resolves the conflict automatically. Destructive rating and membership removals remain unsupported. See `docs/adr/0006-rating-conflict-snapshots.md`.
 
 ## Operational Observation
 

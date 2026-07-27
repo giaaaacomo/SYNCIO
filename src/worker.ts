@@ -1956,8 +1956,11 @@ function configurePage(origin: string): string {
       }
       const totalDifferences = body.operations.totalDifferences ?? body.operations.total;
       const deferred = body.operations.deferred || 0;
+      const conflicts = body.ratingState?.conflicts?.length || 0;
       result.textContent = totalDifferences + " differences found; " + body.operations.total +
-        " in this batch" + (deferred ? ", " + deferred + " deferred" : "") + ". No writes applied.";
+        " in this batch" + (deferred ? ", " + deferred + " deferred" : "") +
+        (conflicts ? "; " + conflicts + " rating conflict" + (conflicts === 1 ? "" : "s") + " left unchanged" : "") +
+        ". No writes applied.";
       output.textContent = JSON.stringify(body, null, 2);
       output.classList.remove("hidden");
       previewFingerprint = body.operations.fingerprint || "";
@@ -1985,7 +1988,8 @@ function configurePage(origin: string): string {
         return;
       }
       result.textContent = body.applied + " operations applied: " + body.stremioOperations +
-        " to Stremio, " + body.traktOperations + " to Trakt.";
+        " to Stremio, " + body.traktOperations + " to Trakt" +
+        (body.conflicts ? "; " + body.conflicts + " rating conflicts left unchanged" : "") + ".";
       previewFingerprint = "";
       byId("sync-apply").classList.add("hidden");
       await refreshStatus();
@@ -2009,7 +2013,8 @@ function configurePage(origin: string): string {
         result.textContent = body.error || "Live sync activation failed";
         return;
       }
-      result.textContent = "Live synchronization active. " + body.applied + " operations applied.";
+      result.textContent = "Live synchronization active. " + body.applied + " operations applied" +
+        (body.conflicts ? "; " + body.conflicts + " rating conflicts left unchanged" : "") + ".";
       previewFingerprint = "";
       byId("live-confirmation").value = "";
       byId("live-activation").classList.add("hidden");

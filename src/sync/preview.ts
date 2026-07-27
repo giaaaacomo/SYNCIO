@@ -14,6 +14,12 @@ import {
 import { loadSyncCredentials } from "./credentials.js";
 import { getHostedSyncSettings } from "../storage/repositories/users.js";
 import { getSyncCursor } from "../storage/repositories/sync-cursors.js";
+import {
+  buildRatingConflict,
+  getRatingSnapshots,
+  type RatingConflict,
+  type RatingSnapshot
+} from "../storage/repositories/rating-state.js";
 import { decodeWatchedField } from "./watched-bitfield.js";
 
 export interface BaselineOperation {
@@ -141,6 +147,10 @@ export async function previewWorkerSync(input: {
     watchlistShows: watchlistShowPages.items,
     videoSets
   });
+  const ratingMediaKeys = ratingCandidateKeys(library, ratedMoviePages.items, ratedShowPages.items);
+  const ratingSnapshots = settings.ratingSyncEnabled
+    ? await getRatingSnapshots(input.db, input.userId, ratingMediaKeys)
+    : new Map<string, RatingSnapshot>();
   const ratingPlan = settings.ratingSyncEnabled
     ? await buildRatingOperations(
       credentials.stremio.authKey,
@@ -151,12 +161,14 @@ export async function previewWorkerSync(input: {
       settings.likeThreshold,
       settings.loveThreshold,
       input.fetcher,
-      input.stremioLikesBase
+      input.stremioLikesBase,
+      ratingSnapshots,
+      input.userId
     )
-    : { operations: [], offset: 0, checked: 0, total: 0, nextOffset: 0 };
+    : { operations: [], snapshots: [], conflicts: [], offset: 0, checked: 0, total: 0, nextOffset: 0 };
   const allOperations = [...ratingPlan.operations, ...baseline];
   const operations = operationBatch(baseline, ratingPlan.operations);
-  const fingerprint = await operationFingerprint(operations);
+  const fingerprint = await operationFingerprint(operations, ratingPlan.conflicts);
   return {
     mode: "preview",
     apply: false,
@@ -198,6 +210,10 @@ export async function previewWorkerSync(input: {
       total: ratingPlan.total,
       nextOffset: ratingPlan.nextOffset
     },
+    ratingState: {
+      snapshots: ratingPlan.snapshots,
+      conflicts: ratingPlan.conflicts
+    },
     pendingCoverage: ratingPlan.nextOffset !== 0
       ? [{
         feature: "stremio-ratings",
@@ -224,9 +240,13 @@ export async function buildRatingOperations(
   likeThreshold: number,
   loveThreshold: number,
   fetcher: typeof fetch,
-  likesBase?: string
+  likesBase?: string,
+  snapshots = new Map<string, RatingSnapshot>(),
+  conflictScope = "self-host"
 ): Promise<{
   operations: BaselineOperation[];
+  snapshots: RatingSnapshot[];
+  conflicts: RatingConflict[];
   offset: number;
   checked: number;
   total: number;
@@ -268,6 +288,8 @@ export async function buildRatingOperations(
   const offset = totalRatings > 0 ? rawOffset % totalRatings : 0;
   const batch = knownItems.slice(offset, offset + RATING_BATCH_SIZE);
   const operations: BaselineOperation[] = [];
+  const nextSnapshots: RatingSnapshot[] = [];
+  const conflicts: RatingConflict[] = [];
   for (const candidate of batch) {
     const current = await getStremioRatingStatus(
       authKey,
@@ -278,6 +300,65 @@ export async function buildRatingOperations(
     );
     const trakt = traktRatings.get(ratingKey(candidate.mediaType, candidate.imdb));
     const kind = candidate.mediaType === "movie" ? "rating-movie" : "rating-series";
+    const mediaKey = ratingKey(candidate.mediaType, candidate.imdb);
+    const stremioStatus = normalizeRatingStatus(current);
+    const currentState: RatingSnapshot = {
+      mediaKey,
+      stremioStatus,
+      traktRating: trakt?.rating ?? null
+    };
+    const previous = snapshots.get(mediaKey);
+    if (previous) {
+      const stremioChanged = previous.stremioStatus !== stremioStatus;
+      const traktChanged = previous.traktRating !== currentState.traktRating;
+      const equivalent = mapTraktRating(currentState.traktRating ?? 0, likeThreshold, loveThreshold) === stremioStatus;
+      if (stremioChanged && traktChanged && !equivalent) {
+        conflicts.push(await buildRatingConflict({
+          scope: conflictScope,
+          mediaKey,
+          kind,
+          previous,
+          current: currentState
+        }));
+        continue;
+      }
+      if (equivalent) {
+        nextSnapshots.push(currentState);
+        continue;
+      }
+      if (stremioChanged && !traktChanged) {
+        const traktRating = mapStremioRating(stremioStatus, likeThreshold, loveThreshold);
+        if (traktRating !== null) {
+          operations.push({
+            direction: "stremio-to-trakt",
+            kind,
+            imdb: candidate.imdb,
+            title: candidate.title,
+            traktRating,
+            ratingStatus: stremioStatus
+          });
+          nextSnapshots.push({ ...currentState, traktRating });
+        } else {
+          nextSnapshots.push(previous);
+        }
+        continue;
+      }
+      if (traktChanged && !stremioChanged) {
+        const target = mapTraktRating(currentState.traktRating ?? 0, likeThreshold, loveThreshold);
+        operations.push({
+          direction: "trakt-to-stremio",
+          kind,
+          imdb: candidate.imdb,
+          title: trakt?.title ?? candidate.title,
+          ...(currentState.traktRating === null ? {} : { traktRating: currentState.traktRating }),
+          ratingStatus: target
+        });
+        nextSnapshots.push({ ...currentState, stremioStatus: target });
+        continue;
+      }
+      nextSnapshots.push(previous);
+      continue;
+    }
     if (trakt) {
       const target = mapTraktRating(trakt.rating, likeThreshold, loveThreshold);
       if (current !== target) operations.push({
@@ -288,6 +369,7 @@ export async function buildRatingOperations(
         traktRating: trakt.rating,
         ratingStatus: target
       });
+      nextSnapshots.push({ mediaKey, stremioStatus: target, traktRating: trakt.rating });
       continue;
     }
     const traktRating = mapStremioRating(current, likeThreshold, loveThreshold);
@@ -299,9 +381,40 @@ export async function buildRatingOperations(
       traktRating,
       ratingStatus: current === "liked" || current === "loved" ? current : null
     });
+    nextSnapshots.push({
+      mediaKey,
+      stremioStatus,
+      traktRating: traktRating ?? null
+    });
   }
   const nextOffset = offset + batch.length >= totalRatings ? 0 : offset + batch.length;
-  return { operations, offset, checked: batch.length, total: totalRatings, nextOffset };
+  return {
+    operations,
+    snapshots: nextSnapshots,
+    conflicts,
+    offset,
+    checked: batch.length,
+    total: totalRatings,
+    nextOffset
+  };
+}
+
+function ratingCandidateKeys(library: StremioLibraryItem[], ratedMovies: unknown, ratedShows: unknown): string[] {
+  const keys = new Set<string>();
+  for (const item of library) {
+    if (isImdbId(item._id) && (item.type === "movie" || item.type === "series")) {
+      keys.add(ratingKey(item.type, item._id));
+    }
+  }
+  const ratings = new Map<string, { mediaType: "movie" | "series"; title: string | null; rating: number }>();
+  addTraktRatings(ratings, ratedMovies, "movie");
+  addTraktRatings(ratings, ratedShows, "series");
+  for (const key of ratings.keys()) keys.add(key);
+  return Array.from(keys);
+}
+
+function normalizeRatingStatus(status: StremioRatingStatus): "liked" | "loved" | null {
+  return status === "liked" || status === "loved" ? status : null;
 }
 
 function addTraktRatings(
@@ -347,8 +460,11 @@ export function mapStremioRating(
   return null;
 }
 
-export async function operationFingerprint(operations: BaselineOperation[]): Promise<string> {
-  const encoded = new TextEncoder().encode(JSON.stringify(operations));
+export async function operationFingerprint(
+  operations: BaselineOperation[],
+  conflicts: RatingConflict[] = []
+): Promise<string> {
+  const encoded = new TextEncoder().encode(JSON.stringify({ operations, conflicts }));
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoded));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

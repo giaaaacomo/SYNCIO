@@ -88,7 +88,7 @@ The current beta evidence and remaining client checks are tracked in [the beta a
 
 The collapsed **Data and privacy** section provides three protected actions:
 
-- **Export data** downloads settings, account identifiers, secret-presence flags, recent runs, the idempotency ledger, cursors, and conflicts. Credentials and encrypted secret values are deliberately excluded.
+- **Export data** downloads settings, account identifiers, secret-presence flags, recent runs, the idempotency ledger, cursors, rating snapshots, and conflicts. Credentials and encrypted secret values are deliberately excluded.
 - **Disconnect accounts** first returns settings to Preview only, disarming live sync, then deletes stored Stremio/Trakt connection material while preserving settings and run history.
 - **Delete all data** requires the exact `DELETE SYNCIO DATA` confirmation and removes every SYNCIO row from the user's D1 database.
 

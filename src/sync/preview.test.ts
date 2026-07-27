@@ -152,6 +152,100 @@ test("plans ratings in both directions and keeps existing Trakt ratings authorit
   assert.equal(plan.nextOffset, 0);
 });
 
+test("preserves a native Trakt rating when neither side changed since the snapshot", async () => {
+  const plan = await buildRatingOperations(
+    "auth",
+    [{ _id: "tt0000010", name: "Native eight", type: "movie" }],
+    [{ rating: 8, movie: { title: "Native eight", ids: { imdb: "tt0000010" } } }],
+    [],
+    0,
+    7,
+    9,
+    ratingFetcher(new Map([["movie:tt0000010", "liked"]])),
+    "https://likes.example/api",
+    new Map([["movie:tt0000010", {
+      mediaKey: "movie:tt0000010",
+      stremioStatus: "liked",
+      traktRating: 8
+    }]])
+  );
+
+  assert.deepEqual(plan.operations, []);
+  assert.deepEqual(plan.conflicts, []);
+  assert.equal(plan.snapshots[0]?.traktRating, 8);
+});
+
+test("propagates the only side changed since a rating snapshot", async () => {
+  const fromStremio = await buildRatingOperations(
+    "auth",
+    [{ _id: "tt0000011", name: "Changed in Stremio", type: "movie" }],
+    [{ rating: 8, movie: { title: "Changed in Stremio", ids: { imdb: "tt0000011" } } }],
+    [],
+    0,
+    7,
+    9,
+    ratingFetcher(new Map([["movie:tt0000011", "loved"]])),
+    "https://likes.example/api",
+    new Map([["movie:tt0000011", {
+      mediaKey: "movie:tt0000011",
+      stremioStatus: "liked",
+      traktRating: 8
+    }]])
+  );
+  assert.equal(fromStremio.operations[0]?.direction, "stremio-to-trakt");
+  assert.equal(fromStremio.operations[0]?.traktRating, 9);
+  assert.equal(fromStremio.snapshots[0]?.traktRating, 9);
+
+  const fromTrakt = await buildRatingOperations(
+    "auth",
+    [{ _id: "tt0000012", name: "Changed in Trakt", type: "movie" }],
+    [{ rating: 9, movie: { title: "Changed in Trakt", ids: { imdb: "tt0000012" } } }],
+    [],
+    0,
+    7,
+    9,
+    ratingFetcher(new Map([["movie:tt0000012", "liked"]])),
+    "https://likes.example/api",
+    new Map([["movie:tt0000012", {
+      mediaKey: "movie:tt0000012",
+      stremioStatus: "liked",
+      traktRating: 8
+    }]])
+  );
+  assert.equal(fromTrakt.operations[0]?.direction, "trakt-to-stremio");
+  assert.equal(fromTrakt.operations[0]?.ratingStatus, "loved");
+  assert.equal(fromTrakt.snapshots[0]?.stremioStatus, "loved");
+});
+
+test("reports simultaneous divergent rating changes without planning a write", async () => {
+  const plan = await buildRatingOperations(
+    "auth",
+    [{ _id: "tt0000013", name: "Conflict", type: "movie" }],
+    [{ rating: 6, movie: { title: "Conflict", ids: { imdb: "tt0000013" } } }],
+    [],
+    0,
+    7,
+    9,
+    ratingFetcher(new Map([["movie:tt0000013", "loved"]])),
+    "https://likes.example/api",
+    new Map([["movie:tt0000013", {
+      mediaKey: "movie:tt0000013",
+      stremioStatus: "liked",
+      traktRating: 7
+    }]])
+  );
+
+  assert.deepEqual(plan.operations, []);
+  assert.equal(plan.snapshots.length, 0);
+  assert.equal(plan.conflicts.length, 1);
+  assert.equal(plan.conflicts[0]?.mediaKey, "movie:tt0000013");
+  assert.deepEqual(plan.conflicts[0]?.current, {
+    mediaKey: "movie:tt0000013",
+    stremioStatus: "loved",
+    traktRating: 6
+  });
+});
+
 test("caps each account run to a bounded operation batch", () => {
   const baseline = Array.from({ length: 300 }, (_, index) => ({
     direction: "trakt-to-stremio" as const,
@@ -172,3 +266,11 @@ test("caps each account run to a bounded operation batch", () => {
   assert.equal(batch[0]?.kind, "rating-movie");
   assert.equal(batch.at(-1)?.imdb, "tt-248");
 });
+
+function ratingFetcher(statuses: Map<string, string>): typeof fetch {
+  return async (input) => {
+    const url = new URL(String(input));
+    const key = `${url.searchParams.get("mediaType")}:${url.searchParams.get("mediaId")}`;
+    return Response.json({ status: statuses.get(key) ?? null });
+  };
+}

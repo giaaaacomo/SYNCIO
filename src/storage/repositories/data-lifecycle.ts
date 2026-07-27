@@ -35,6 +35,7 @@ export interface SyncioDataExport {
   appliedChanges: AppliedChangeExport[];
   cursors: CursorExport[];
   conflicts: ConflictExport[];
+  ratingSnapshots: RatingSnapshotExport[];
   excludedSecrets: string[];
 }
 
@@ -64,12 +65,30 @@ interface ConflictExport {
   resolvedAt: string | null;
 }
 
+interface RatingSnapshotExport {
+  mediaKey: string;
+  stremioStatus: string | null;
+  traktRating: number | null;
+  updatedAt: string;
+}
+
 export async function exportSyncioUserData(
   db: D1DatabaseLike,
   userId: string,
   exportedAt = new Date().toISOString()
 ): Promise<SyncioDataExport> {
-  const [user, connection, settings, liveActivation, recentRuns, deviceSession, appliedChanges, cursors, conflicts] =
+  const [
+    user,
+    connection,
+    settings,
+    liveActivation,
+    recentRuns,
+    deviceSession,
+    appliedChanges,
+    cursors,
+    conflicts,
+    ratingSnapshots
+  ] =
     await Promise.all([
       getUser(db, userId),
       getConnection(db, userId),
@@ -79,7 +98,8 @@ export async function exportSyncioUserData(
       getTraktDeviceSession(db, userId),
       readAppliedChanges(db, userId),
       readCursors(db, userId),
-      readConflicts(db, userId)
+      readConflicts(db, userId),
+      readRatingSnapshots(db, userId)
     ]);
 
   return {
@@ -112,6 +132,7 @@ export async function exportSyncioUserData(
     appliedChanges,
     cursors,
     conflicts,
+    ratingSnapshots,
     excludedSecrets: [
       "Stremio auth key",
       "Trakt client secret",
@@ -120,6 +141,25 @@ export async function exportSyncioUserData(
       "encrypted credential ciphertext"
     ]
   };
+}
+
+async function readRatingSnapshots(db: D1DatabaseLike, userId: string): Promise<RatingSnapshotExport[]> {
+  const rows = await jsonRows(db, `SELECT COALESCE(json_group_array(json_object(
+      'media_key', media_key,
+      'stremio_status', stremio_status,
+      'trakt_rating', trakt_rating,
+      'updated_at', updated_at
+    )), '[]') AS rows
+    FROM rating_snapshots WHERE user_id = ?`, userId, "rating snapshots");
+  return rows.map((value, index) => {
+    const row = recordValue(value, `rating snapshots[${index}]`);
+    return {
+      mediaKey: requiredString(row.media_key, "rating_snapshots.media_key"),
+      stremioStatus: nullableString(row.stremio_status, "rating_snapshots.stremio_status"),
+      traktRating: nullableInt(row.trakt_rating, "rating_snapshots.trakt_rating"),
+      updatedAt: requiredString(row.updated_at, "rating_snapshots.updated_at")
+    };
+  });
 }
 
 export async function disconnectSyncioAccounts(db: D1DatabaseLike, userId: string): Promise<void> {
@@ -139,6 +179,7 @@ export async function deleteSyncioUserData(db: D1DatabaseLike, userId: string): 
     "sync_cursors",
     "change_ledger",
     "sync_conflicts",
+    "rating_snapshots",
     "sync_runs",
     "connections",
     "sync_settings",
@@ -259,4 +300,10 @@ function nullableString(value: unknown, label: string): string | null {
 function requiredInt(value: unknown, label: string): number {
   if (typeof value === "number" && Number.isInteger(value)) return value;
   throw new Error(`${label} must be an integer.`);
+}
+
+function nullableInt(value: unknown, label: string): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  throw new Error(`${label} must be an integer or null.`);
 }

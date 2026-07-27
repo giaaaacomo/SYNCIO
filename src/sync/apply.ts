@@ -21,6 +21,7 @@ import { loadSyncCredentials } from "./credentials.js";
 import { buildVisibleMovie, buildVisibleSeries, buildWatchedMovie, buildWatchedSeries } from "./library-changes.js";
 import { operationFingerprint, previewWorkerSync, type BaselineOperation } from "./preview.js";
 import { decodeWatchedField, encodeWatchedField } from "./watched-bitfield.js";
+import { saveRatingState, type RatingConflict, type RatingSnapshot } from "../storage/repositories/rating-state.js";
 
 export async function applyWorkerSync(input: {
   db: D1DatabaseLike;
@@ -83,14 +84,22 @@ async function applyWorkerSyncForScopes(
 
   const report = await previewWorkerSync(input);
   const operations = extractOperations(report);
+  const ratingState = extractRatingState(report);
   const ratingCursor = extractRatingCursor(report);
-  const fingerprint = await operationFingerprint(operations);
+  const fingerprint = await operationFingerprint(operations, ratingState.conflicts);
   if (fingerprint !== input.expectedFingerprint) {
     throw new Error("Preview changed. Run a new preview before applying.");
   }
   if (operations.length === 0) {
+    await saveRatingState(input.db, input.userId, ratingState.snapshots, ratingState.conflicts);
     await setSyncCursor(input.db, input.userId, ratingCursor.key, ratingCursor.nextOffset);
-    return { ok: true, applied: 0, fingerprint, ratingNextOffset: ratingCursor.nextOffset };
+    return {
+      ok: true,
+      applied: 0,
+      conflicts: ratingState.conflicts.length,
+      fingerprint,
+      ratingNextOffset: ratingCursor.nextOffset
+    };
   }
 
   const credentials = await loadSyncCredentials(input);
@@ -179,6 +188,7 @@ async function applyWorkerSyncForScopes(
     );
     await recordOperations(input.db, input.userId, traktRatingOperations);
   }
+  await saveRatingState(input.db, input.userId, ratingState.snapshots, ratingState.conflicts);
   await setSyncCursor(input.db, input.userId, ratingCursor.key, ratingCursor.nextOffset);
   return {
     ok: true,
@@ -190,8 +200,24 @@ async function applyWorkerSyncForScopes(
     traktHistoryOperations: historyOperations.length,
     traktWatchlistOperations: watchlistOperations.length,
     traktRatingOperations: traktRatingOperations.length,
+    conflicts: ratingState.conflicts.length,
     ratingNextOffset: ratingCursor.nextOffset,
     fingerprint
+  };
+}
+
+function extractRatingState(report: Record<string, unknown>): {
+  snapshots: RatingSnapshot[];
+  conflicts: RatingConflict[];
+} {
+  const state = report.ratingState;
+  if (!state || typeof state !== "object") throw new Error("Preview has no rating state.");
+  const snapshots = (state as { snapshots?: unknown }).snapshots;
+  const conflicts = (state as { conflicts?: unknown }).conflicts;
+  if (!Array.isArray(snapshots) || !Array.isArray(conflicts)) throw new Error("Preview rating state is invalid.");
+  return {
+    snapshots: snapshots as RatingSnapshot[],
+    conflicts: conflicts as RatingConflict[]
   };
 }
 
