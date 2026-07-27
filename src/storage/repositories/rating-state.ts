@@ -1,5 +1,7 @@
 import type { D1DatabaseLike } from "../d1.js";
 
+const RATING_SNAPSHOT_QUERY_BATCH = 90;
+
 export interface RatingSnapshot {
   mediaKey: string;
   stremioStatus: "liked" | "loved" | null;
@@ -20,27 +22,30 @@ export async function getRatingSnapshots(
   mediaKeys: string[]
 ): Promise<Map<string, RatingSnapshot>> {
   if (mediaKeys.length === 0) return new Map();
-  const placeholders = mediaKeys.map(() => "?").join(", ");
-  const row = await db.prepare(`SELECT COALESCE(json_group_array(json_object(
-      'media_key', media_key,
-      'stremio_status', stremio_status,
-      'trakt_rating', trakt_rating
-    )), '[]') AS rows
-    FROM rating_snapshots
-    WHERE user_id = ? AND media_key IN (${placeholders})`)
-    .bind(userId, ...mediaKeys)
-    .first<{ rows?: unknown }>();
-  const values = parseRows(row?.rows);
   const snapshots = new Map<string, RatingSnapshot>();
-  for (const value of values) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-    const item = value as Record<string, unknown>;
-    if (typeof item.media_key !== "string") continue;
-    snapshots.set(item.media_key, {
-      mediaKey: item.media_key,
-      stremioStatus: ratingStatus(item.stremio_status),
-      traktRating: ratingNumber(item.trakt_rating)
-    });
+  const uniqueKeys = Array.from(new Set(mediaKeys));
+  for (let index = 0; index < uniqueKeys.length; index += RATING_SNAPSHOT_QUERY_BATCH) {
+    const batch = uniqueKeys.slice(index, index + RATING_SNAPSHOT_QUERY_BATCH);
+    const placeholders = batch.map(() => "?").join(", ");
+    const row = await db.prepare(`SELECT COALESCE(json_group_array(json_object(
+        'media_key', media_key,
+        'stremio_status', stremio_status,
+        'trakt_rating', trakt_rating
+      )), '[]') AS rows
+      FROM rating_snapshots
+      WHERE user_id = ? AND media_key IN (${placeholders})`)
+      .bind(userId, ...batch)
+      .first<{ rows?: unknown }>();
+    for (const value of parseRows(row?.rows)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const item = value as Record<string, unknown>;
+      if (typeof item.media_key !== "string") continue;
+      snapshots.set(item.media_key, {
+        mediaKey: item.media_key,
+        stremioStatus: ratingStatus(item.stremio_status),
+        traktRating: ratingNumber(item.trakt_rating)
+      });
+    }
   }
   return snapshots;
 }

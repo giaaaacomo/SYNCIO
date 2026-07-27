@@ -1,7 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { D1DatabaseLike } from "../d1.js";
-import { buildRatingConflict, saveRatingState } from "./rating-state.js";
+import { buildRatingConflict, getRatingSnapshots, saveRatingState } from "./rating-state.js";
+
+test("loads large rating snapshot sets in bounded D1 batches", async () => {
+  const db = new RecordingD1();
+  db.firstRows.push(
+    { rows: JSON.stringify([{ media_key: "movie:tt0", stremio_status: "liked", trakt_rating: 7 }]) },
+    { rows: JSON.stringify([{ media_key: "movie:tt90", stremio_status: "loved", trakt_rating: 9 }]) },
+    { rows: JSON.stringify([{ media_key: "movie:tt180", stremio_status: null, trakt_rating: null }]) }
+  );
+  const keys = Array.from({ length: 205 }, (_, index) => `movie:tt${index}`);
+
+  const snapshots = await getRatingSnapshots(db, "self-host", [...keys, keys[0]!]);
+
+  assert.equal(db.queries.length, 3);
+  assert.deepEqual(db.bindings.map((values) => values.length), [91, 91, 26]);
+  assert.deepEqual(snapshots.get("movie:tt0"), {
+    mediaKey: "movie:tt0",
+    stremioStatus: "liked",
+    traktRating: 7
+  });
+  assert.equal(snapshots.get("movie:tt90")?.stremioStatus, "loved");
+  assert.equal(snapshots.get("movie:tt180")?.traktRating, null);
+});
 
 test("records rating conflicts idempotently and does not advance their snapshots", async () => {
   const db = new RecordingD1();
@@ -45,6 +67,7 @@ test("saves converged rating snapshots and resolves their open conflicts", async
 class RecordingD1 implements D1DatabaseLike {
   queries: string[] = [];
   bindings: unknown[][] = [];
+  firstRows: Array<Record<string, unknown> | null> = [];
 
   prepare(query: string) {
     this.queries.push(query);
@@ -55,7 +78,7 @@ class RecordingD1 implements D1DatabaseLike {
         return this;
       },
       async first<T>() {
-        return null as T | null;
+        return (self.firstRows.shift() ?? null) as T | null;
       },
       async run() {
         return { success: true };
