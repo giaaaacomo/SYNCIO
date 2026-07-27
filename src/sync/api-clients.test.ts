@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { traktGetAllPages } from "./api-clients.js";
+import { getCinemetaVideoSets, traktGetAllPages } from "./api-clients.js";
 import { TraktApiError } from "../trakt/api-error.js";
 
 test("reads every declared Trakt page", async () => {
@@ -77,4 +77,27 @@ test("preserves Retry-After when a paginated Trakt read is rate limited", async 
       return true;
     }
   );
+});
+
+test("skips missing Cinemeta metadata without discarding valid series", async () => {
+  const result = await getCinemetaVideoSets(
+    ["tt-missing", "tt-valid"],
+    async () => Response.json({
+      metasDetailed: [
+        null,
+        {
+          id: "tt-valid",
+          name: "Valid Show",
+          videos: ["tt-valid:1:1", null, { id: "tt-valid:1:2" }, {}]
+        }
+      ]
+    }),
+    "https://cinemeta.test/imdbIds="
+  );
+
+  assert.deepEqual(result, [{
+    id: "tt-valid",
+    name: "Valid Show",
+    videos: ["tt-valid:1:1", "tt-valid:1:2"]
+  }]);
 });

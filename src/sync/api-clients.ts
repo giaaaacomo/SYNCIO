@@ -216,19 +216,22 @@ export async function getCinemetaVideoSets(
     if (!response.ok) throw new Error(`Cinemeta video-id request failed with HTTP ${response.status}.`);
     const payload = recordValue(await response.json(), "Cinemeta video-id response");
     if (!Array.isArray(payload.metasDetailed)) throw new Error("Cinemeta response has no metasDetailed array.");
-    output.push(...payload.metasDetailed.map((value) => {
-      const meta = recordValue(value, "Cinemeta metadata");
+    output.push(...payload.metasDetailed.flatMap((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+      const meta = value as Record<string, unknown>;
       const videos = Array.isArray(meta.videos) ? meta.videos.map((video) => {
         if (typeof video === "string") return video;
-        const record = recordValue(video, "Cinemeta video");
+        if (!video || typeof video !== "object" || Array.isArray(video)) return null;
+        const record = video as Record<string, unknown>;
         return typeof record.id === "string" ? record.id : null;
       }).filter((id): id is string => id !== null) : [];
-      return {
-        id: typeof meta.id === "string" ? meta.id : "",
+      if (typeof meta.id !== "string" || meta.id.length === 0) return [];
+      return [{
+        id: meta.id,
         name: typeof meta.name === "string" ? meta.name : null,
         videos
-      };
-    }).filter((item) => item.id.length > 0));
+      }];
+    }));
   }
   return output;
 }

@@ -138,6 +138,8 @@ export async function previewWorkerSync(input: {
     ...library.filter((item) => item.type === "series" && typeof item.state?.watched === "string").map((item) => item._id)
   ]);
   const videoSets = await getCinemetaVideoSets(Array.from(showIds), input.fetcher, input.cinemetaVideoIdsBase);
+  const resolvedCinemetaIds = new Set(videoSets.map((item) => item.id));
+  const missingCinemetaIds = Array.from(showIds).filter((id) => !resolvedCinemetaIds.has(id));
   const baseline = await buildBaselinePlan({
     library,
     watchedMovies,
@@ -193,7 +195,10 @@ export async function previewWorkerSync(input: {
       traktWatchlistMovies: watchlistMoviePages.itemCount,
       traktWatchlistMoviePages: watchlistMoviePages.pagesFetched,
       traktWatchlistShows: watchlistShowPages.itemCount,
-      traktWatchlistShowPages: watchlistShowPages.pagesFetched
+      traktWatchlistShowPages: watchlistShowPages.pagesFetched,
+      cinemetaSeriesRequested: showIds.size,
+      cinemetaSeriesResolved: videoSets.length,
+      cinemetaSeriesMissing: missingCinemetaIds.length
     },
     operations: {
       total: operations.length,
@@ -214,13 +219,19 @@ export async function previewWorkerSync(input: {
       snapshots: ratingPlan.snapshots,
       conflicts: ratingPlan.conflicts
     },
-    pendingCoverage: ratingPlan.nextOffset !== 0
-      ? [{
+    pendingCoverage: [
+      ...(missingCinemetaIds.length > 0 ? [{
+        feature: "watched-episodes",
+        strategy: "cinemeta-video-ids",
+        missingSeriesTotal: missingCinemetaIds.length,
+        missingSeriesIds: missingCinemetaIds.slice(0, 25)
+      }] : []),
+      ...(ratingPlan.nextOffset !== 0 ? [{
         feature: "stremio-ratings",
         strategy: "known-library-item-sweep",
         remainingInCycle: ratingPlan.total - ratingPlan.nextOffset
-      }]
-      : []
+      }] : [])
+    ]
   };
 }
 
