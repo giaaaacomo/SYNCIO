@@ -15,7 +15,8 @@ This document maps the original MVP acceptance matrix to reproducible evidence. 
 | Library and Watchlist additions synchronize in both directions | Automated and live | Bidirectional planning and payload tests pass; the isolated account exercised both directions. |
 | Watchlist removal does not remove Stremio Library membership | Automated and live | Removal apply is rejected and visible Library membership is preserved by the Library change builders. Trakt automatically removed a completed Silo from its Watchlist; Silo remained visible in Stremio and the next scheduled run restored the additive Watchlist entry. |
 | Ratings synchronize in both directions for movies and series | Automated and live | Threshold, authority, payload, movie, and series cases pass; isolated E2E tests exercised Like/Love mapping. |
-| Existing native Trakt ratings do not collapse to threshold values | Automated | The rating planner keeps an existing Trakt value authoritative and maps it to Stremio without rewriting Trakt. |
+| Existing native Trakt ratings do not collapse to threshold values | Automated and live | The rating planner keeps an existing Trakt value authoritative and maps it to Stremio without rewriting Trakt. The 0.3.1 E2E baseline preserved Matrix at native Trakt rating 8 and Stremio `liked`. |
+| Simultaneous divergent rating changes do not overwrite either account | Automated | Three-way rating tests produce an idempotent conflict with zero planned writes; converged states advance the snapshot and resolve the conflict. |
 | A second unchanged sync performs zero external writes | Automated and live | Fingerprint/idempotency behavior is covered and repeated E2E previews reported no operations. |
 | Credentials are encrypted at rest and absent from URLs/logs/exports | Automated | Secret encryption, context binding, redacted status, lifecycle export, and protected-route tests pass. |
 | Users can disconnect and delete all stored data | Automated | Worker lifecycle and foreign-key-safe deletion tests pass. |
@@ -61,3 +62,5 @@ The initial baseline keeps existing Trakt ratings authoritative, including nativ
 The isolated E2E deployment observed a delegated grant originally expiring at `2026-07-24T17:46:04Z`. Stremio exposed a replacement created at `2026-07-24T17:00:41Z`, expiring at `2026-07-31T17:00:41Z`. A read-only Trakt identity request returned HTTP 200 and the configured account guard matched.
 
 No access token, refresh token, auth key, or secret value is recorded in this audit.
+
+SYNCIO 0.3.1 was deployed to the existing E2E Worker and D1 database with migration `0005_rating_snapshots.sql`. Its first protected preview reported zero differences and zero conflicts. A zero-write apply stored nine rating snapshots; a direct read-only D1 check confirmed nine snapshots and zero open conflicts.
