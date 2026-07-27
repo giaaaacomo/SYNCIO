@@ -1,6 +1,6 @@
 # Beta Acceptance Audit
 
-Audit date: 2026-07-25
+Audit date: 2026-07-27
 
 This document maps the original MVP acceptance matrix to reproducible evidence. A row is complete only when its stated evidence exists; automated coverage does not substitute for client-specific visual validation.
 
@@ -13,7 +13,7 @@ This document maps the original MVP acceptance matrix to reproducible evidence. 
 | External Trakt episode history becomes native per-episode Stremio watched state | Automated and live | Episode planning, bitfield, and Library-preservation tests pass; isolated E2E tests showed the episode eye marker without flagging the whole show. |
 | Stremio watched state reconciles to Trakt without duplicate plays | Automated and live | History payload grouping and duplicate-history planning are covered; repeated E2E previews converged to zero writes. |
 | Library and Watchlist additions synchronize in both directions | Automated and live | Bidirectional planning and payload tests pass; the isolated account exercised both directions. |
-| Watchlist removal does not remove Stremio Library membership | Automated policy | Removal apply is rejected and visible Library membership is preserved by the Library change builders. |
+| Watchlist removal does not remove Stremio Library membership | Automated and live | Removal apply is rejected and visible Library membership is preserved by the Library change builders. Trakt automatically removed a completed Silo from its Watchlist; Silo remained visible in Stremio and the next scheduled run restored the additive Watchlist entry. |
 | Ratings synchronize in both directions for movies and series | Automated and live | Threshold, authority, payload, movie, and series cases pass; isolated E2E tests exercised Like/Love mapping. |
 | Existing native Trakt ratings do not collapse to threshold values | Automated | The rating planner keeps an existing Trakt value authoritative and maps it to Stremio without rewriting Trakt. |
 | A second unchanged sync performs zero external writes | Automated and live | Fingerprint/idempotency behavior is covered and repeated E2E previews reported no operations. |
@@ -43,10 +43,12 @@ Use isolated accounts until all four client rows have been recorded in the relea
 | --- | --- | --- | --- | --- | --- | --- |
 | Web | Pass; installed card cached 0.2.2 while the live manifest served 0.3.0 | Pass | Pass; historical episodes remained watched and Silo's newly released episode remained unwatched | Not exercised; all test series were history-only | Pass | Partial pass |
 | Desktop | Pass | Pass | Pass; matched Web state | Not exercised; all test series were history-only | Pass | Partial pass |
-| Android | Pending | Pending | Pending | Pending | Pending | Pending |
+| Android | Pass | Pass | Pass; Ava rating/watched and Silo episode state matched Web | Pass for Library; calendar was not exposed by the observed mobile UI | Pass | Pass; calendar N/A |
 | Android TV | Pending | Pending | Pending | Pending | Pending | Pending |
 
 During Web validation, intermittent metadata and search failures named the Env and YouTube addons. SYNCIO exposes no catalogs or metadata resources, and its live manifest remained reachable, so those failures are not attributed to SYNCIO. Opening a history-only item while metadata was unavailable produced Stremio's "No metadata was found" placeholder; the same title resolved after the catalog recovered.
+
+The cross-direction live scenario added Dark to the Trakt Watchlist and imported it as a visible Stremio Library series. Marking Silo S3E4 watched in Stremio added the episode to Trakt history. Trakt then automatically removed the completed Silo from its Watchlist; Silo stayed visible in Stremio, and the hourly scheduler restored it to the additive Watchlist set. The final preview contained nine Stremio Library items, two Trakt Watchlist shows, 42 Trakt episode-history events, and zero differences. Android displayed the resulting Dark and Silo Library entries after a fresh account login.
 
 ### Conflict semantics
 
