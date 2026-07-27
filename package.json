@@ -67,10 +67,10 @@
         "description": "Private D1 storage for encrypted account connections, sync settings, cursors, rating snapshots, conflicts, runs, and the idempotency ledger."
       },
       "SYNCIO_ENCRYPTION_KEY": {
-        "description": "A private random value used to encrypt credentials in your D1 database. Generate an independent value of at least 32 characters with your password manager, save it there, and never reuse the setup token."
+        "description": "**Generate this value; do not invent a memorable password.** Use at least 64 random characters from your password manager, or run `openssl rand -base64 48`. Save it: it encrypts credentials in D1 and must be different from the setup token."
       },
       "SYNCIO_SETUP_TOKEN": {
-        "description": "A separate random value of at least 32 characters used to unlock the SYNCIO configure page. Save it in your password manager; Cloudflare cannot show it again."
+        "description": "**Generate a second, different value.** Use at least 64 random characters from your password manager, or run `openssl rand -base64 48`. Save it: this unlocks `/configure`, and Cloudflare cannot show it again."
       }
     }
   }
