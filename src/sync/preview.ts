@@ -5,7 +5,6 @@ import {
   getStremioRatingStatus,
   getCinemetaVideoSets,
   getStremioLibrary,
-  traktGet,
   traktGetAllPages,
   type CinemetaVideoSet,
   type StremioLibraryItem,
@@ -63,8 +62,8 @@ export async function previewWorkerSync(input: {
     stremioIdentity,
     traktIdentity,
     library,
-    watchedMovies,
-    watchedShows,
+    watchedMoviePages,
+    watchedShowPages,
     watchedEpisodeHistoryPage,
     ratedMoviePages,
     ratedShowPages,
@@ -75,11 +74,23 @@ export async function previewWorkerSync(input: {
     fetchTraktIdentity(credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase),
     getStremioLibrary(credentials.stremio.authKey, input.fetcher, input.stremioApiBase),
     settings.watchedEnabled
-      ? traktGet("/sync/watched/movies", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase)
-      : Promise.resolve([]),
+      ? traktGetAllPages(
+        "/sync/watched/movies",
+        credentials.trakt.clientId,
+        credentials.trakt.accessToken,
+        input.fetcher,
+        input.traktApiBase
+      )
+      : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 }),
     settings.watchedEnabled
-      ? traktGet("/sync/watched/shows", credentials.trakt.clientId, credentials.trakt.accessToken, input.fetcher, input.traktApiBase)
-      : Promise.resolve([]),
+      ? traktGetAllPages(
+        "/sync/watched/shows?extended=progress",
+        credentials.trakt.clientId,
+        credentials.trakt.accessToken,
+        input.fetcher,
+        input.traktApiBase
+      )
+      : Promise.resolve({ items: [], pagesFetched: 0, pageCount: 0, itemCount: 0 }),
     settings.watchedEnabled
       ? traktGetAllPages(
         "/sync/history/episodes",
@@ -132,6 +143,8 @@ export async function previewWorkerSync(input: {
   if (traktIdentity.username !== credentials.trakt.username) throw new Error("Trakt account guard failed during preview.");
 
   const watchedEpisodeHistory = watchedEpisodeHistoryPage.items;
+  const watchedMovies = watchedMoviePages.items;
+  const watchedShows = watchedShowPages.items;
   const showIds = new Set([
     ...inputShowImdbIds(watchedShows),
     ...inputEpisodeHistoryShowImdbIds(watchedEpisodeHistory),
@@ -184,8 +197,10 @@ export async function previewWorkerSync(input: {
     },
     fetched: {
       stremioLibraryItems: library.length,
-      traktWatchedMovies: arrayValue(watchedMovies).length,
-      traktWatchedShows: arrayValue(watchedShows).length,
+      traktWatchedMovies: watchedMoviePages.itemCount,
+      traktWatchedMoviePages: watchedMoviePages.pagesFetched,
+      traktWatchedShows: watchedShowPages.itemCount,
+      traktWatchedShowPages: watchedShowPages.pagesFetched,
       traktEpisodeHistoryEvents: arrayValue(watchedEpisodeHistory).length,
       traktEpisodeHistoryPages: watchedEpisodeHistoryPage.pagesFetched,
       traktEpisodeHistoryTotal: watchedEpisodeHistoryPage.itemCount,

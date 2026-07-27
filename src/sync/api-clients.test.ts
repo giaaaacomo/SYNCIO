@@ -62,6 +62,24 @@ test("uses Trakt's bounded page size by default", async () => {
   ]);
 });
 
+test("preserves Trakt extended fields while paginating", async () => {
+  const requested: string[] = [];
+  await traktGetAllPages(
+    "/sync/watched/shows?extended=progress",
+    "client",
+    "token",
+    async (input) => {
+      requested.push(String(input));
+      return Response.json([]);
+    },
+    "https://trakt.test"
+  );
+
+  assert.deepEqual(requested, [
+    "https://trakt.test/sync/watched/shows?extended=progress&page=1&limit=250"
+  ]);
+});
+
 test("preserves Retry-After when a paginated Trakt read is rate limited", async () => {
   await assert.rejects(
     () => traktGetAllPages(
