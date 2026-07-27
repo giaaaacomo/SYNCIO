@@ -135,7 +135,9 @@ export async function previewWorkerSync(input: {
   const showIds = new Set([
     ...inputShowImdbIds(watchedShows),
     ...inputEpisodeHistoryShowImdbIds(watchedEpisodeHistory),
-    ...library.filter((item) => item.type === "series" && typeof item.state?.watched === "string").map((item) => item._id)
+    ...library
+      .filter((item) => item.type === "series" && isImdbId(item._id) && typeof item.state?.watched === "string")
+      .map((item) => item._id)
   ]);
   const videoSets = await getCinemetaVideoSets(Array.from(showIds), input.fetcher, input.cinemetaVideoIdsBase);
   const resolvedCinemetaIds = new Set(videoSets.map((item) => item.id));
