@@ -1411,8 +1411,8 @@ function configurePage(origin: string): string {
         </div>
         <form id="trakt-transport-form">
           <label>
-            Trakt username
-            <input name="expectedUsername" autocomplete="username" required>
+            Trakt username (without @)
+            <input name="expectedUsername" autocomplete="username" placeholder="e.g. jackblack96" required>
           </label>
           <button type="submit">Confirm Trakt account</button>
         </form>

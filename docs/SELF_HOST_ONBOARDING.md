@@ -17,7 +17,7 @@ Version 0.3.2 is a public technical beta. Begin with isolated test accounts and 
 7. Select **Add to Stremio**, then choose **Configure** in Stremio's installation window.
 8. Unlock setup with the saved `SYNCIO_SETUP_TOKEN`.
 9. Link the Stremio account that already has the intended Trakt account connected.
-10. Enter the expected Trakt username and enable `Stremio Delegated`.
+10. Enter the expected Trakt username without the leading `@` and enable `Stremio Delegated`.
 11. Run a read-only full-account preview and confirm both account guards.
 12. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
 13. Return to Stremio and complete the addon installation.

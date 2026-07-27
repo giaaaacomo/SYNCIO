@@ -85,6 +85,8 @@ test("keeps the delegated flow primary and direct Trakt controls advanced", asyn
   assert.match(body, /data-edit-step="stremio"/);
   assert.match(body, /data-edit-step="trakt"/);
   assert.match(body, /data-edit-step="settings"/);
+  assert.match(body, /Trakt username \(without @\)/);
+  assert.match(body, /placeholder="e\.g\. jackblack96"/);
   assert.match(body, /Open in Stremio/);
   assert.ok(body.indexOf('id="trakt-app-status"') > advancedOptions);
   assert.ok(body.indexOf('id="trakt-app-form"') > advancedOptions);
