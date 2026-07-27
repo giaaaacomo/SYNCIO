@@ -13,12 +13,35 @@ Version 0.3.1 is a public technical beta. Begin with isolated test accounts and 
 3. Choose the Worker, repository, and automatically provisioned D1 names.
 4. Open the [SYNCIO secret generator](https://giaaaacomo.github.io/SYNCIO/secret-generator.html), copy its independent `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values into the Worker secret fields, and save both in a password manager. The static generator uses Web Crypto entirely in the browser and makes no network requests.
 5. Let Cloudflare clone the repository, apply migrations, and deploy the Worker.
-6. Open the deployed `/configure` page.
-7. Link the Stremio account that already has the intended Trakt account connected.
-8. Enter the expected Trakt username and enable `Stremio Delegated`.
-9. Run a read-only full-account preview and confirm both account guards.
-10. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
-11. Install the generated manifest in Stremio.
+6. In the completed build output, find the `https://...workers.dev` address below `Deployed ... triggers`.
+7. Append `/configure` to that address and open it.
+8. Link the Stremio account that already has the intended Trakt account connected.
+9. Enter the expected Trakt username and enable `Stremio Delegated`.
+10. Run a read-only full-account preview and confirm both account guards.
+11. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
+12. Install the generated manifest in Stremio.
+
+## Find The Configure URL
+
+Cloudflare assigns every deployed Worker an address in this form:
+
+```text
+https://<worker-name>.<account-subdomain>.workers.dev
+```
+
+The deploy log prints it near the end, directly below `Deployed ... triggers`. The SYNCIO setup page is the same address with `/configure` appended:
+
+```text
+https://<worker-name>.<account-subdomain>.workers.dev/configure
+```
+
+If the deploy log is no longer open:
+
+1. Open the Cloudflare dashboard.
+2. Select **Workers & Pages**.
+3. Select the SYNCIO Worker.
+4. Open **Domains** or **Settings > Domains & Routes**, depending on the dashboard layout.
+5. Open the listed `workers.dev` address and append `/configure`.
 
 The configure page presents these actions as five ordered steps: Stremio, Trakt, sync settings, preview/activation, and installation. Later steps remain inactive until their prerequisites are ready, while completed account and settings forms collapse into editable summaries. System diagnostics and the Direct OAuth fallback stay collapsed below the main flow.
 

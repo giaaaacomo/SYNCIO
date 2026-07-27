@@ -39,7 +39,14 @@ Using isolated test accounts for the first deployment is recommended. If you use
    - `SYNCIO_SETUP_TOKEN` unlocks your private configure page.
    The generator runs entirely in your browser and makes no network requests.
 5. Keep the default build command `pnpm run build` and deploy command `pnpm run deploy`.
-6. Deploy, then open the Worker URL and its `/configure` page.
+6. Select **Deploy**. When the build finishes, find the `https://...workers.dev` address below `Deployed ... triggers`.
+7. Append `/configure` to that address and open it. For example:
+
+   ```text
+   https://your-syncio-worker.your-subdomain.workers.dev/configure
+   ```
+
+If you already closed the build result, open **Workers & Pages** in the Cloudflare dashboard, select your SYNCIO Worker, and find its `workers.dev` address under **Domains** (or **Settings > Domains & Routes**). Open that address and append `/configure`.
 
 Cloudflare provisions the Worker and D1 database, applies all migrations, and creates a personal Git repository for future updates.
 
