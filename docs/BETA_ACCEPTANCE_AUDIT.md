@@ -1,6 +1,6 @@
 # Beta Acceptance Audit
 
-Audit date: 2026-07-27
+Audit date: 2026-07-28
 
 This document maps the original MVP acceptance matrix to reproducible evidence. A row is complete only when its stated evidence exists; automated coverage does not substitute for client-specific visual validation.
 
@@ -25,11 +25,11 @@ This document maps the original MVP acceptance matrix to reproducible evidence. 
 | Delegated Trakt authorization renews without a new app slot | Automated and live | Credential rotation is covered without token persistence. The E2E grant renewed before expiry and remained bound to the expected test account. |
 | Undocumented Stremio integration is isolated and contract tested | Automated | Stremio account, Library, watched bitfield, rating, and API adapter behavior is isolated under `src/stremio` and `src/sync`. |
 
-## Remaining Release Gates
+## Client Validation
 
 ### Multi-client validation
 
-The following checks require real clients and remain open for Stremio Web, desktop, Android, and Android TV:
+The following checks were exercised on Stremio Web, desktop, and Android. Android TV is explicitly deferred as a non-blocking post-beta check:
 
 - addon installation and Configure access;
 - no unexpected Home or Board rows;
@@ -38,18 +38,20 @@ The following checks require real clients and remain open for Stremio Web, deskt
 - imported state survives client restart and Stremio account refresh;
 - no client overwrites imported watched or rating state.
 
-Use isolated accounts until all four client rows have been recorded in the release checklist below.
+The beta checks used isolated Stremio and Trakt accounts.
 
 | Client | Install | No rows | Watched marks | Library/calendar | Restart/account sync | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Web | Pass; installed card cached 0.2.2 while the live manifest served 0.3.0 | Pass | Pass; historical episodes remained watched and Silo's newly released episode remained unwatched | Not exercised; all test series were history-only | Pass | Partial pass |
-| Desktop | Pass | Pass | Pass; matched Web state | Not exercised; all test series were history-only | Pass | Partial pass |
+| Web | Pass; configure and manifest served 0.3.1 | Pass | Pass; historical episodes remained watched and Silo's newly released episode remained unwatched | Pass; Silo and Dark remained in Library and Silo episodes appeared in Calendar | Pass in the earlier persistence check; Silo remained unchanged after 0.3.1 | Pass |
+| Desktop | Pass | Pass | Pass; matched Web state | Pass; Library and Silo Calendar entries matched Web | Pass in the earlier persistence check; Silo remained unchanged after 0.3.1 | Pass |
 | Android | Pass | Pass | Pass; Ava rating/watched and Silo episode state matched Web | Pass for Library; calendar was not exposed by the observed mobile UI | Pass | Pass; calendar N/A |
 | Android TV | Deferred post-beta | Deferred post-beta | Deferred post-beta | Deferred post-beta | Deferred post-beta | Non-blocking |
 
 During Web validation, intermittent metadata and search failures named the Env and YouTube addons. SYNCIO exposes no catalogs or metadata resources, and its live manifest remained reachable, so those failures are not attributed to SYNCIO. Opening a history-only item while metadata was unavailable produced Stremio's "No metadata was found" placeholder; the same title resolved after the catalog recovered.
 
 The cross-direction live scenario added Dark to the Trakt Watchlist and imported it as a visible Stremio Library series. Marking Silo S3E4 watched in Stremio added the episode to Trakt history. Trakt then automatically removed the completed Silo from its Watchlist; Silo stayed visible in Stremio, and the hourly scheduler restored it to the additive Watchlist set. The final preview contained nine Stremio Library items, two Trakt Watchlist shows, 42 Trakt episode-history events, and zero differences. Android displayed the resulting Dark and Silo Library entries after a fresh account login.
+
+The 0.3.1 visual recheck confirmed the current configure version, correct Library membership on Web and desktop, and Silo episodes in Calendar. A second restart was intentionally omitted because restart/account persistence had already passed and 0.3.1 changed only backend rating reconciliation.
 
 ### Conflict semantics
 
