@@ -1,0 +1,58 @@
+name: Bug report
+description: Report reproducible SYNCIO behavior without sharing secrets.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never include passwords, auth keys, OAuth tokens, setup tokens, encryption keys, or unredacted exports.
+  - type: input
+    id: version
+    attributes:
+      label: SYNCIO version
+      placeholder: 0.3.1
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Stremio client
+      options:
+        - Web
+        - Desktop
+        - Android
+        - Android TV
+        - Not client-specific
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the expected result and the actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open...
+        2. Run...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Include preview/status excerpts only after removing credentials and account identifiers.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed all credentials, tokens, private URLs, and personal account data.
+          required: true

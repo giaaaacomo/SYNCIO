@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/giaaaacomo/SYNCIO/security/advisories/new
+    about: Report vulnerabilities without exposing details publicly.
+  - name: Self-host onboarding guide
+    url: https://github.com/giaaaacomo/SYNCIO/blob/main/docs/SELF_HOST_ONBOARDING.md
+    about: Review deployment, setup-token recovery, and privacy instructions.

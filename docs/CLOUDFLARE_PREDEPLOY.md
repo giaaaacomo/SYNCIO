@@ -9,7 +9,7 @@ SYNCIO has been validated on a staging Cloudflare Worker and is being prepared a
 - D1 storage adapter: `src/storage/d1.ts`
 - D1 repositories: `src/storage/repositories/users.ts`, `src/storage/repositories/connections.ts`
 - AES-GCM secret helper: `src/crypto/secrets.ts`
-- Migrations: `migrations/0001_initial.sql` through `migrations/0004_trakt_auth_mode.sql`
+- Migrations: `migrations/0001_initial.sql` through `migrations/0005_rating_snapshots.sql`
 - Generic Wrangler config: `wrangler.jsonc`
 - Worker checks:
 

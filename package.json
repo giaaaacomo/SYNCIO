@@ -64,7 +64,7 @@
   "cloudflare": {
     "bindings": {
       "SYNCIO_DB": {
-        "description": "Private D1 storage for encrypted account connections, sync settings, cursors, runs, and the idempotency ledger."
+        "description": "Private D1 storage for encrypted account connections, sync settings, cursors, rating snapshots, conflicts, runs, and the idempotency ledger."
       },
       "SYNCIO_ENCRYPTION_KEY": {
         "description": "A private random value used to encrypt credentials in your D1 database. Generate an independent value of at least 32 characters with your password manager, save it there, and never reuse the setup token."
