@@ -262,7 +262,11 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
     return text("Method not allowed", 405);
   }
 
-  if (url.pathname === "/" || url.pathname === "/configure") {
+  if (url.pathname === "/") {
+    return html(installPage(origin));
+  }
+
+  if (url.pathname === "/configure") {
     return html(configurePage(origin));
   }
 
@@ -941,6 +945,109 @@ function fingerprintValue(value: unknown): string {
   return fingerprint;
 }
 
+function installPage(origin: string): string {
+  const manifestUrl = `${origin}/manifest.json`;
+  const installUrl = `stremio://${origin.replace(/^https?:\/\//, "")}/manifest.json`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Install SYNCIO</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      --bg: #f4f6f7;
+      --surface: #ffffff;
+      --text: #172126;
+      --muted: #66747b;
+      --border: #d8e0e3;
+      --accent: #0f766e;
+      --accent-strong: #115e59;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111619;
+        --surface: #171e21;
+        --text: #eef3f4;
+        --muted: #9aa8ae;
+        --border: #344147;
+        --accent: #5eead4;
+        --accent-strong: #99f6e4;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      display: grid;
+      min-height: 100vh;
+      margin: 0;
+      place-items: center;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    main { width: min(460px, 100%); }
+    header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    h1 { margin: 0 0 4px; font-size: 2rem; line-height: 1.1; letter-spacing: 0; }
+    p { margin: 0; color: var(--muted); }
+    .version { padding-top: 6px; color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+    .install {
+      margin-top: 28px;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+    }
+    .button {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      padding: 11px 18px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 750;
+      text-decoration: none;
+    }
+    @media (prefers-color-scheme: dark) {
+      .button { color: #082f2a; }
+    }
+    .button:hover { background: var(--accent-strong); }
+    .next { margin-top: 14px; font-size: 0.9rem; }
+    code {
+      display: block;
+      margin-top: 24px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    @media (max-width: 520px) {
+      .button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>SYNCIO</h1>
+        <p>Stremio ↔ Trakt</p>
+      </div>
+      <span class="version">v${SYNCIO_VERSION}</span>
+    </header>
+    <section class="install">
+      <a class="button" href="${escapeHtml(installUrl)}">Add to Stremio</a>
+      <p class="next">In the Stremio window, select <strong>Configure</strong> to connect your accounts.</p>
+      <code>${escapeHtml(manifestUrl)}</code>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
 function configurePage(origin: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -1142,6 +1249,16 @@ function configurePage(origin: string): string {
     .mode label + label { border-left: 1px solid var(--border); }
     .mode input { width: auto; min-height: 0; margin-right: 6px; }
     .credential-fields { display: grid; gap: 14px; }
+    .auth-guidance {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+    .auth-guidance p { margin: 0; font-size: 0.9rem; }
+    .auth-guidance .actions { margin-top: 2px; }
     .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
     .settings label { display: flex; align-items: center; gap: 8px; }
     .settings input[type="checkbox"] { width: auto; min-height: 0; }
@@ -1256,16 +1373,24 @@ function configurePage(origin: string): string {
         <form id="stremio-form">
           <fieldset class="mode">
             <label><input type="radio" name="mode" value="credentials" checked>Email</label>
+            <label><input type="radio" name="mode" value="facebook">Facebook</label>
             <label><input type="radio" name="mode" value="auth-key">Auth Key</label>
           </fieldset>
           <div class="credential-fields" id="stremio-credentials">
             <label>Email <input name="email" type="email" autocomplete="username"></label>
             <label>Password <input name="password" type="password" autocomplete="current-password"></label>
           </div>
+          <div id="stremio-facebook" class="auth-guidance hidden">
+            <p>Add a Stremio password to the account created with Facebook, then return and use the Email option. Facebook login will continue to work.</p>
+            <div class="actions">
+              <a class="button" href="https://stremio.zendesk.com/hc/en-us/articles/9877172192786-How-to-use-Facebook-created-account-with-email-and-password" target="_blank" rel="noreferrer">Open Stremio instructions</a>
+              <button class="secondary" id="stremio-facebook-done" type="button">I have a password</button>
+            </div>
+          </div>
           <div id="stremio-auth-key" class="hidden">
             <label>Auth Key <input name="authKey" type="password" autocomplete="off"></label>
           </div>
-          <button type="submit">Connect Stremio</button>
+          <button id="stremio-submit" type="submit">Connect Stremio</button>
         </form>
         <p id="stremio-result" class="result muted"></p>
       </div>
@@ -1747,13 +1872,28 @@ function configurePage(origin: string): string {
 
     byId("trakt-link-poll").addEventListener("click", () => pollTraktLink());
 
-    document.querySelectorAll('input[name="mode"]').forEach((input) => {
+    function selectStremioMode(mode) {
+      const credentialsMode = mode === "credentials";
+      const facebookMode = mode === "facebook";
+      const authKeyMode = mode === "auth-key";
+      byId("stremio-credentials").classList.toggle("hidden", !credentialsMode);
+      byId("stremio-facebook").classList.toggle("hidden", !facebookMode);
+      byId("stremio-auth-key").classList.toggle("hidden", !authKeyMode);
+      byId("stremio-submit").classList.toggle("hidden", facebookMode);
+    }
+
+    document.querySelectorAll('#stremio-form input[name="mode"]').forEach((input) => {
       input.addEventListener("change", () => {
-        const authKeyMode = input.checked && input.value === "auth-key";
         if (!input.checked) return;
-        byId("stremio-credentials").classList.toggle("hidden", authKeyMode);
-        byId("stremio-auth-key").classList.toggle("hidden", !authKeyMode);
+        selectStremioMode(input.value);
       });
+    });
+
+    byId("stremio-facebook-done").addEventListener("click", () => {
+      const emailMode = document.querySelector('#stremio-form input[name="mode"][value="credentials"]');
+      emailMode.checked = true;
+      selectStremioMode("credentials");
+      byId("stremio-credentials").querySelector("input")?.focus();
     });
 
     document.querySelectorAll("[data-edit-step]").forEach((button) => {
@@ -1782,8 +1922,7 @@ function configurePage(origin: string): string {
         body: JSON.stringify(payload)
       });
       form.reset();
-      byId("stremio-credentials").classList.remove("hidden");
-      byId("stremio-auth-key").classList.add("hidden");
+      selectStremioMode("credentials");
       if (!response.ok) {
         result.textContent = body.error || "Stremio link failed";
         return;

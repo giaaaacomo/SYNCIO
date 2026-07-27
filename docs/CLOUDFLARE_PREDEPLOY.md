@@ -54,7 +54,7 @@ The user still supplies two independent secrets during deployment. The default `
 
 The Deploy to Cloudflare form reads `.dev.vars.example` and the required-secret declarations from `wrangler.jsonc`, then asks for exactly `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN`. Both can be independent random password-manager values of at least 32 characters. Base64-encoded 32-byte keys remain supported.
 
-After deployment, Cloudflare prints the Worker address below `Deployed ... triggers`. Open that `https://...workers.dev` address with `/configure` appended. The same address can be recovered later from the Worker's **Domains** page or **Settings > Domains & Routes** in the Cloudflare dashboard.
+After deployment, Cloudflare prints the Worker address below `Deployed ... triggers`. Opening that `https://...workers.dev` address displays a direct Stremio installation button. The user selects **Configure** in Stremio's installation window; the manifest supplies the Worker's `/configure` URL through the standard `configurationUrl` behavior hint. The Worker address can be recovered later from **Domains** or **Settings > Domains & Routes** in the Cloudflare dashboard.
 
 For a terminal deployment, the equivalent command shape is:
 

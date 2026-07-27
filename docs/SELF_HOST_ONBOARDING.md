@@ -4,7 +4,7 @@ SYNCIO is targeting a self-hosted setup, not a hosted-by-us service.
 
 Each user deploys their own Cloudflare Worker + D1 database. By default, SYNCIO reuses the Trakt authorization already linked to the user's Stremio account. The runtime that processes credentials and sync state belongs to the user.
 
-Version 0.3.1 is a public technical beta. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
+Version 0.3.2 is a public technical beta. Begin with isolated test accounts and inspect the read-only result before connecting accounts that matter.
 
 ## Intended User Flow
 
@@ -13,15 +13,16 @@ Version 0.3.1 is a public technical beta. Begin with isolated test accounts and 
 3. Choose the Worker, repository, and automatically provisioned D1 names.
 4. Open the [SYNCIO secret generator](https://giaaaacomo.github.io/SYNCIO/secret-generator.html), copy its independent `SYNCIO_ENCRYPTION_KEY` and `SYNCIO_SETUP_TOKEN` values into the Worker secret fields, and save both in a password manager. The static generator uses Web Crypto entirely in the browser and makes no network requests.
 5. Let Cloudflare clone the repository, apply migrations, and deploy the Worker.
-6. In the completed build output, find the `https://...workers.dev` address below `Deployed ... triggers`.
-7. Append `/configure` to that address and open it.
-8. Link the Stremio account that already has the intended Trakt account connected.
-9. Enter the expected Trakt username and enable `Stremio Delegated`.
-10. Run a read-only full-account preview and confirm both account guards.
-11. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
-12. Install the generated manifest in Stremio.
+6. Open the `https://...workers.dev` address shown in the completed build output.
+7. Select **Add to Stremio**, then choose **Configure** in Stremio's installation window.
+8. Unlock setup with the saved `SYNCIO_SETUP_TOKEN`.
+9. Link the Stremio account that already has the intended Trakt account connected.
+10. Enter the expected Trakt username and enable `Stremio Delegated`.
+11. Run a read-only full-account preview and confirm both account guards.
+12. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
+13. Return to Stremio and complete the addon installation.
 
-## Find The Configure URL
+## Find The Worker URL
 
 Cloudflare assigns every deployed Worker an address in this form:
 
@@ -29,11 +30,7 @@ Cloudflare assigns every deployed Worker an address in this form:
 https://<worker-name>.<account-subdomain>.workers.dev
 ```
 
-The deploy log prints it near the end, directly below `Deployed ... triggers`. The SYNCIO setup page is the same address with `/configure` appended:
-
-```text
-https://<worker-name>.<account-subdomain>.workers.dev/configure
-```
+The deploy log prints it near the end, directly below `Deployed ... triggers`. Opening this address displays the installation button. Stremio reads the manifest's standard `configurationUrl` field and exposes the SYNCIO setup page through **Configure** in its installation window.
 
 If the deploy log is no longer open:
 
@@ -41,9 +38,15 @@ If the deploy log is no longer open:
 2. Select **Workers & Pages**.
 3. Select the SYNCIO Worker.
 4. Open **Domains** or **Settings > Domains & Routes**, depending on the dashboard layout.
-5. Open the listed `workers.dev` address and append `/configure`.
+5. Open the listed `workers.dev` address.
 
 The configure page presents these actions as five ordered steps: Stremio, Trakt, sync settings, preview/activation, and installation. Later steps remain inactive until their prerequisites are ready, while completed account and settings forms collapse into editable summaries. System diagnostics and the Direct OAuth fallback stay collapsed below the main flow.
+
+## Stremio Accounts Created With Facebook
+
+SYNCIO does not embed Facebook Login or ask for a Facebook access token. Stremio does not document a third-party OAuth handoff for addons, and routing a Facebook credential through a self-hosted Worker would widen the credential boundary unnecessarily.
+
+Choose **Facebook** in the Stremio connection step and follow [Stremio's official password setup instructions](https://stremio.zendesk.com/hc/en-us/articles/9877172192786-How-to-use-Facebook-created-account-with-email-and-password). This adds email/password access to the existing Stremio account; Stremio states that Facebook login continues to work. Return to SYNCIO, select **Email**, and connect with that password. Users who already possess a Stremio auth key can continue to use the **Auth Key** option.
 
 Delegated mode reads the current Trakt access grant from Stremio at the beginning of every run. It uses Stremio's public Trakt client identity for Trakt requests, keeps the access token only in memory, ignores the refresh token, and fails closed if the grant is absent, expired, or belongs to another account. An isolated E2E deployment observed Stremio rotate the grant automatically before its July 2026 expiry, so periodic manual reconnection is not expected under the currently observed behavior. Reconnect Trakt inside Stremio only if the health guard reports a missing or expired grant.
 

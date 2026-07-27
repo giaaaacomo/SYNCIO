@@ -2,6 +2,15 @@
 
 All notable changes to SYNCIO are documented here.
 
+## [0.3.2] - 2026-07-28
+
+### Changed
+
+- the Worker home now opens a direct Stremio installation flow;
+- setup is entered through Stremio's standard **Configure** action;
+- Stremio accounts created with Facebook receive a guided, official password setup path without exposing Facebook credentials to SYNCIO;
+- deployment documentation no longer asks users to construct the `/configure` URL manually.
+
 ## [0.3.1] - 2026-07-28
 
 First public technical beta.
@@ -34,4 +43,5 @@ First public technical beta.
 - rating discovery is limited to known items and processed in bounded batches;
 - existing installations require their own Cloudflare deployment to receive updates.
 
+[0.3.2]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.2
 [0.3.1]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.1

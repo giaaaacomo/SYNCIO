@@ -23,6 +23,18 @@ test("serves an installable manifest without catalog rows", async () => {
   assert.equal(body.behaviorHints?.configurationUrl, "https://syncio.example/configure");
 });
 
+test("serves a direct Stremio installation entrypoint", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/"), {});
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(body, /href="stremio:\/\/syncio\.example\/manifest\.json"/);
+  assert.match(body, /Add to Stremio/);
+  assert.match(body, /select <strong>Configure<\/strong>/);
+  assert.match(body, /https:\/\/syncio\.example\/manifest\.json/);
+  assert.doesNotMatch(body, /Setup Token/);
+});
+
 test("links configure onboarding to the current Trakt app creation page", async () => {
   const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
   const body = await response.text();
@@ -30,6 +42,16 @@ test("links configure onboarding to the current Trakt app creation page", async 
   assert.equal(response.status, 200);
   assert.match(body, /https:\/\/app\.trakt\.tv\/settings\/apps\/api\/new/);
   assert.doesNotMatch(body, /trakt\.tv\/oauth\/applications/);
+});
+
+test("guides Facebook-created Stremio accounts through the official password flow", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
+  const body = await response.text();
+
+  assert.match(body, /name="mode" value="facebook"/);
+  assert.match(body, /stremio\.zendesk\.com\/hc\/en-us\/articles\/9877172192786-/);
+  assert.match(body, /Facebook login will continue to work/);
+  assert.doesNotMatch(body, /connect\.facebook\.net|graph\.facebook\.com/);
 });
 
 test("exposes the configured support channels without embedding payment data", async () => {
