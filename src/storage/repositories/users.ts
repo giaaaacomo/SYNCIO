@@ -17,6 +17,7 @@ export interface HostedSyncSettings {
   likeThreshold: number;
   loveThreshold: number;
   syncIntervalMinutes: number;
+  watchedExportDelayHours: number;
   optionalCatalogsEnabled: boolean;
 }
 
@@ -36,6 +37,7 @@ export function defaultHostedSyncSettings(): HostedSyncSettings {
     likeThreshold: 7,
     loveThreshold: 9,
     syncIntervalMinutes: 60,
+    watchedExportDelayHours: 6,
     optionalCatalogsEnabled: false
   };
 }
@@ -63,7 +65,8 @@ export async function ensureUser(db: D1DatabaseLike, userId: string, now = new D
 export async function getHostedSyncSettings(db: D1DatabaseLike, userId: string): Promise<HostedSyncSettings> {
   const row = await db
     .prepare(`SELECT scope, history_mode, watched_enabled, rating_sync_enabled, library_watchlist_enabled,
-      removals_enabled, like_threshold, love_threshold, sync_interval_minutes, optional_catalogs_enabled
+      removals_enabled, like_threshold, love_threshold, sync_interval_minutes, watched_export_delay_hours,
+      optional_catalogs_enabled
       FROM sync_settings WHERE user_id = ?`)
     .bind(userId)
     .first<Record<string, unknown>>();
@@ -78,8 +81,9 @@ export async function upsertHostedSyncSettings(
   await db
     .prepare(`INSERT INTO sync_settings (
       user_id, scope, history_mode, watched_enabled, rating_sync_enabled, library_watchlist_enabled,
-      removals_enabled, like_threshold, love_threshold, sync_interval_minutes, optional_catalogs_enabled
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      removals_enabled, like_threshold, love_threshold, sync_interval_minutes, watched_export_delay_hours,
+      optional_catalogs_enabled
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
       scope = excluded.scope,
       history_mode = excluded.history_mode,
@@ -90,6 +94,7 @@ export async function upsertHostedSyncSettings(
       like_threshold = excluded.like_threshold,
       love_threshold = excluded.love_threshold,
       sync_interval_minutes = excluded.sync_interval_minutes,
+      watched_export_delay_hours = excluded.watched_export_delay_hours,
       optional_catalogs_enabled = excluded.optional_catalogs_enabled,
       live_activated_at = CASE WHEN excluded.scope = 'account' THEN sync_settings.live_activated_at ELSE NULL END,
       live_activation_fingerprint = CASE
@@ -105,6 +110,7 @@ export async function upsertHostedSyncSettings(
       settings.likeThreshold,
       settings.loveThreshold,
       settings.syncIntervalMinutes,
+      settings.watchedExportDelayHours,
       boolInt(settings.optionalCatalogsEnabled)
     )
     .run();
@@ -159,8 +165,15 @@ function parseHostedSyncSettings(row: Record<string, unknown>): HostedSyncSettin
   if (historyMode !== "union") throw new Error("Unsupported history mode.");
   const likeThreshold = requiredInt(row.like_threshold, "sync_settings.like_threshold");
   const loveThreshold = requiredInt(row.love_threshold, "sync_settings.love_threshold");
+  const watchedExportDelayHours = requiredInt(
+    row.watched_export_delay_hours,
+    "sync_settings.watched_export_delay_hours"
+  );
   if (likeThreshold < 1 || likeThreshold > 10 || loveThreshold < 1 || loveThreshold > 10 || likeThreshold >= loveThreshold) {
     throw new Error("Invalid rating thresholds.");
+  }
+  if (![0, 3, 6, 12, 24].includes(watchedExportDelayHours)) {
+    throw new Error("Invalid watched export delay.");
   }
 
   return {
@@ -173,6 +186,7 @@ function parseHostedSyncSettings(row: Record<string, unknown>): HostedSyncSettin
     likeThreshold,
     loveThreshold,
     syncIntervalMinutes: requiredInt(row.sync_interval_minutes, "sync_settings.sync_interval_minutes"),
+    watchedExportDelayHours,
     optionalCatalogsEnabled: intBool(row.optional_catalogs_enabled, "sync_settings.optional_catalogs_enabled")
   };
 }

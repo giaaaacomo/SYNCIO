@@ -466,6 +466,7 @@ test("does not arm live mode through an ordinary settings save", async () => {
     likeThreshold: 7,
     loveThreshold: 9,
     syncIntervalMinutes: 60,
+    watchedExportDelayHours: 6,
     optionalCatalogsEnabled: false
   };
   const saved = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/settings", {
@@ -511,6 +512,7 @@ test("exports redacted data, disconnects accounts, and deletes all local state",
       likeThreshold: 7,
       loveThreshold: 9,
       syncIntervalMinutes: 60,
+      watchedExportDelayHours: 6,
       optionalCatalogsEnabled: false
     })
   }), env);
@@ -671,7 +673,8 @@ class MemoryD1 implements D1DatabaseLike {
             like_threshold: bound[7],
             love_threshold: bound[8],
             sync_interval_minutes: bound[9],
-            optional_catalogs_enabled: bound[10],
+            watched_export_delay_hours: bound[10],
+            optional_catalogs_enabled: bound[11],
             live_activated_at: bound[1] === "account" ? existing?.live_activated_at ?? null : null,
             live_activation_fingerprint: bound[1] === "account"
               ? existing?.live_activation_fingerprint ?? null

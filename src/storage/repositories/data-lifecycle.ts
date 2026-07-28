@@ -36,6 +36,7 @@ export interface SyncioDataExport {
   cursors: CursorExport[];
   conflicts: ConflictExport[];
   ratingSnapshots: RatingSnapshotExport[];
+  watchedReconciliation: WatchedReconciliationExport[];
   excludedSecrets: string[];
 }
 
@@ -72,6 +73,14 @@ interface RatingSnapshotExport {
   updatedAt: string;
 }
 
+interface WatchedReconciliationExport {
+  key: string;
+  kind: string;
+  summary: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
 export async function exportSyncioUserData(
   db: D1DatabaseLike,
   userId: string,
@@ -87,7 +96,8 @@ export async function exportSyncioUserData(
     appliedChanges,
     cursors,
     conflicts,
-    ratingSnapshots
+    ratingSnapshots,
+    watchedReconciliation
   ] =
     await Promise.all([
       getUser(db, userId),
@@ -99,7 +109,8 @@ export async function exportSyncioUserData(
       readAppliedChanges(db, userId),
       readCursors(db, userId),
       readConflicts(db, userId),
-      readRatingSnapshots(db, userId)
+      readRatingSnapshots(db, userId),
+      readWatchedReconciliation(db, userId)
     ]);
 
   return {
@@ -133,6 +144,7 @@ export async function exportSyncioUserData(
     cursors,
     conflicts,
     ratingSnapshots,
+    watchedReconciliation,
     excludedSecrets: [
       "Stremio auth key",
       "Trakt client secret",
@@ -170,6 +182,7 @@ export async function disconnectSyncioAccounts(db: D1DatabaseLike, userId: strin
     scope: "account-preview"
   });
   await db.prepare("DELETE FROM trakt_device_sessions WHERE user_id = ?").bind(userId).run();
+  await db.prepare("DELETE FROM watched_reconciliation_candidates WHERE user_id = ?").bind(userId).run();
   await db.prepare("DELETE FROM connections WHERE user_id = ?").bind(userId).run();
 }
 
@@ -180,6 +193,7 @@ export async function deleteSyncioUserData(db: D1DatabaseLike, userId: string): 
     "change_ledger",
     "sync_conflicts",
     "rating_snapshots",
+    "watched_reconciliation_candidates",
     "sync_runs",
     "connections",
     "sync_settings",
@@ -189,6 +203,30 @@ export async function deleteSyncioUserData(db: D1DatabaseLike, userId: string): 
     const key = table === "users" ? "id" : "user_id";
     await db.prepare(`DELETE FROM ${table} WHERE ${key} = ?`).bind(userId).run();
   }
+}
+
+async function readWatchedReconciliation(
+  db: D1DatabaseLike,
+  userId: string
+): Promise<WatchedReconciliationExport[]> {
+  const rows = await jsonRows(db, `SELECT COALESCE(json_group_array(json_object(
+      'key', key,
+      'kind', kind,
+      'summary', summary,
+      'first_seen_at', first_seen_at,
+      'last_seen_at', last_seen_at
+    )), '[]') AS rows
+    FROM watched_reconciliation_candidates WHERE user_id = ?`, userId, "watched reconciliation");
+  return rows.map((value, index) => {
+    const row = recordValue(value, `watched reconciliation[${index}]`);
+    return {
+      key: requiredString(row.key, "watched_reconciliation_candidates.key"),
+      kind: requiredString(row.kind, "watched_reconciliation_candidates.kind"),
+      summary: requiredString(row.summary, "watched_reconciliation_candidates.summary"),
+      firstSeenAt: requiredString(row.first_seen_at, "watched_reconciliation_candidates.first_seen_at"),
+      lastSeenAt: requiredString(row.last_seen_at, "watched_reconciliation_candidates.last_seen_at")
+    };
+  });
 }
 
 async function readAppliedChanges(db: D1DatabaseLike, userId: string): Promise<AppliedChangeExport[]> {

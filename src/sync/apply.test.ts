@@ -5,7 +5,8 @@ import {
   applyWorkerSync,
   buildTraktHistoryPayload,
   buildTraktRatingsPayload,
-  buildTraktWatchlistPayload
+  buildTraktWatchlistPayload,
+  watchedReconciliationKey
 } from "./apply.js";
 import type { D1DatabaseLike } from "../storage/d1.js";
 
@@ -52,6 +53,23 @@ test("groups Stremio watched operations into a Trakt history payload", () => {
       ]
     }]
   });
+});
+
+test("uses stable watched reconciliation keys independent of display metadata", () => {
+  assert.equal(watchedReconciliationKey({
+    direction: "stremio-to-trakt",
+    kind: "watched-movie",
+    imdb: "tt0197273",
+    title: "Bartok the Magnificent"
+  }), "watched-movie:tt0197273");
+  assert.equal(watchedReconciliationKey({
+    direction: "stremio-to-trakt",
+    kind: "watched-episode",
+    imdb: "tt14688458",
+    title: "Silo renamed",
+    season: 3,
+    episode: 4
+  }), "watched-episode:tt14688458:3:4");
 });
 
 test("groups visible Stremio Library items into a Trakt watchlist payload", () => {
@@ -137,6 +155,7 @@ test("refuses live apply when account scope has no activation record", async () 
             like_threshold: 7,
             love_threshold: 9,
             sync_interval_minutes: 60,
+            watched_export_delay_hours: 6,
             optional_catalogs_enabled: 0
           } as T;
           return null;

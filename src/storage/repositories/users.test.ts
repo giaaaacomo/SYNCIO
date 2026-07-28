@@ -107,7 +107,8 @@ class MemoryD1 implements D1DatabaseLike {
             like_threshold: bound[7],
             love_threshold: bound[8],
             sync_interval_minutes: bound[9],
-            optional_catalogs_enabled: bound[10],
+            watched_export_delay_hours: bound[10],
+            optional_catalogs_enabled: bound[11],
             live_activated_at: bound[1] === "account" ? self.settings.get(String(bound[0]))?.live_activated_at ?? null : null,
             live_activation_fingerprint: bound[1] === "account"
               ? self.settings.get(String(bound[0]))?.live_activation_fingerprint ?? null

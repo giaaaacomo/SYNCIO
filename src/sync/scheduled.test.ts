@@ -45,6 +45,7 @@ test("scheduled sync refuses an account scope without an activation record", asy
             like_threshold: 7,
             love_threshold: 9,
             sync_interval_minutes: 60,
+            watched_export_delay_hours: 6,
             optional_catalogs_enabled: 0
           } as T;
           return null;

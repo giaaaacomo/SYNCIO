@@ -52,7 +52,9 @@ Delegated mode reads the current Trakt access grant from Stremio at the beginnin
 
 Direct OAuth remains available under the collapsed **Advanced options** section as an optional fallback. It requires a user-owned Trakt application, consumes a Trakt connected-app slot, and stores its encrypted OAuth tokens in D1. The same section contains direct-app readiness so the default status view stays focused on the delegated path.
 
-Less common sync controls, including optional catalogs and the internal account scope, are grouped under **Advanced sync settings**. New installs can leave them closed and use the preview-to-live activation flow.
+Less common sync controls, including optional catalogs, the internal account scope, and the Stremio-to-Trakt safety
+delay, are grouped under **Advanced sync settings**. The recommended six-hour delay keeps hourly checks active while
+giving Stremio's native Trakt integration time to handle new watches first.
 
 Each run applies at most 250 deterministic differences. Larger first imports converge over later hourly runs. Returning the mode to Preview only disarms live scheduling immediately. History removals remain disabled.
 
@@ -114,7 +116,9 @@ The current beta evidence and remaining client checks are tracked in [the beta a
 
 The collapsed **Data and privacy** section provides three protected actions:
 
-- **Export data** downloads settings, account identifiers, secret-presence flags, recent runs, the idempotency ledger, cursors, rating snapshots, and conflicts. Credentials and encrypted secret values are deliberately excluded.
+- **Export data** downloads settings, account identifiers, secret-presence flags, recent runs, the idempotency ledger,
+  cursors, rating snapshots, pending watched reconciliation records, and conflicts. Credentials and encrypted secret
+  values are deliberately excluded.
 - **Disconnect accounts** first returns settings to Preview only, disarming live sync, then deletes stored Stremio/Trakt connection material while preserving settings and run history.
 - **Delete all data** requires the exact `DELETE SYNCIO DATA` confirmation and removes every SYNCIO row from the user's D1 database.
 

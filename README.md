@@ -58,6 +58,9 @@ The configure page guides you through five steps:
 
 The default delegated Trakt mode reuses Stremio's existing authorization. It does not create another Trakt application, consume another connected-app slot, or persist Trakt access/refresh tokens in D1.
 
+SYNCIO checks hourly. By default, a Stremio watch that is still missing from Trakt must persist for six hours before
+SYNCIO exports it, leaving the native Stremio integration as the immediate path while still repairing missed watches.
+
 For a Stremio account created with Facebook, choose **Facebook** in the first configuration step. SYNCIO links to Stremio's official password setup procedure; adding a password does not disable Facebook login. SYNCIO never requests or processes Facebook credentials or tokens.
 
 Read the [full self-host onboarding guide](docs/SELF_HOST_ONBOARDING.md) for token recovery, updating, privacy export, disconnect, and deletion.

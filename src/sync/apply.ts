@@ -22,6 +22,11 @@ import { buildVisibleMovie, buildVisibleSeries, buildWatchedMovie, buildWatchedS
 import { operationFingerprint, previewWorkerSync, type BaselineOperation } from "./preview.js";
 import { decodeWatchedField, encodeWatchedField } from "./watched-bitfield.js";
 import { saveRatingState, type RatingConflict, type RatingSnapshot } from "../storage/repositories/rating-state.js";
+import {
+  clearWatchedReconciliation,
+  stageWatchedReconciliation,
+  type WatchedReconciliationCandidate
+} from "../storage/repositories/watched-reconciliation.js";
 
 export async function applyWorkerSync(input: {
   db: D1DatabaseLike;
@@ -102,6 +107,35 @@ async function applyWorkerSyncForScopes(
     };
   }
 
+  const watchedExports = operations.filter((item): item is BaselineOperation & {
+    direction: "stremio-to-trakt";
+    kind: "watched-movie" | "watched-episode";
+  } =>
+    item.direction === "stremio-to-trakt"
+    && (item.kind === "watched-movie" || item.kind === "watched-episode")
+  );
+  const watchedCandidates = watchedExports.map((operation) => ({
+    operation,
+    candidate: {
+      key: watchedReconciliationKey(operation),
+      userId: input.userId,
+      direction: "stremio-to-trakt",
+      kind: operation.kind,
+      summary: operationSummary(operation)
+    } satisfies WatchedReconciliationCandidate
+  }));
+  const reconciliation = await stageWatchedReconciliation(
+    input.db,
+    watchedCandidates.map((item) => item.candidate),
+    settings.watchedExportDelayHours,
+    Math.max(180, settings.syncIntervalMinutes * 3)
+  );
+  const readyWatchedKeys = reconciliation.readyKeys;
+  const readyWatchedOperations = watchedCandidates
+    .filter((item) => readyWatchedKeys.has(item.candidate.key))
+    .map((item) => item.operation);
+  const readyWatchedOperationSet = new Set<BaselineOperation>(readyWatchedOperations);
+
   const credentials = await loadSyncCredentials(input);
   const [stremioIdentity, traktIdentity] = await Promise.all([
     fetchStremioIdentity(credentials.stremio.authKey, input.fetcher, input.stremioApiBase),
@@ -111,7 +145,13 @@ async function applyWorkerSyncForScopes(
   if (traktIdentity.username !== credentials.trakt.username) throw new Error("Trakt account guard failed during apply.");
 
   const toStremio = operations.filter((item) => item.direction === "trakt-to-stremio");
-  const toTrakt = operations.filter((item) => item.direction === "stremio-to-trakt");
+  const toTrakt = operations.filter((item) =>
+    item.direction === "stremio-to-trakt"
+    && (
+      (item.kind !== "watched-movie" && item.kind !== "watched-episode")
+      || readyWatchedOperationSet.has(item)
+    )
+  );
   const ratingOperations = toStremio.filter((item) =>
     item.kind === "rating-movie" || item.kind === "rating-series"
   );
@@ -165,6 +205,13 @@ async function applyWorkerSyncForScopes(
       input.traktApiBase
     );
     await recordOperations(input.db, input.userId, historyOperations);
+    await clearWatchedReconciliation(
+      input.db,
+      input.userId,
+      watchedCandidates
+        .filter((item) => readyWatchedKeys.has(item.candidate.key))
+        .map((item) => item.candidate.key)
+    );
   }
   if (watchlistOperations.length > 0) {
     await traktPost(
@@ -192,7 +239,9 @@ async function applyWorkerSyncForScopes(
   await setSyncCursor(input.db, input.userId, ratingCursor.key, ratingCursor.nextOffset);
   return {
     ok: true,
-    applied: operations.length,
+    applied: toStremio.length + toTrakt.length,
+    deferredWatchedExports: reconciliation.deferred,
+    watchedExportDelayHours: settings.watchedExportDelayHours,
     stremioOperations: toStremio.length,
     stremioChanges,
     ratingOperations: ratingOperations.length,
@@ -359,4 +408,16 @@ function operationSummary(operation: BaselineOperation): string {
     return `${operation.imdb} S${operation.season}E${operation.episode}`;
   }
   return `${operation.imdb} ${operation.title ?? ""}`.trim();
+}
+
+export function watchedReconciliationKey(
+  operation: BaselineOperation & {
+    direction: "stremio-to-trakt";
+    kind: "watched-movie" | "watched-episode";
+  }
+): string {
+  if (operation.kind === "watched-episode") {
+    return `${operation.kind}:${operation.imdb}:${operation.season}:${operation.episode}`;
+  }
+  return `${operation.kind}:${operation.imdb}`;
 }

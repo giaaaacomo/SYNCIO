@@ -853,6 +853,10 @@ function parseHostedSyncSettings(value: unknown): HostedSyncSettings {
   }
   const syncIntervalMinutes = intValue(record.syncIntervalMinutes, "syncIntervalMinutes");
   if (syncIntervalMinutes !== 60) throw new Error("Only the hourly sync interval is supported.");
+  const watchedExportDelayHours = intValue(record.watchedExportDelayHours, "watchedExportDelayHours");
+  if (![0, 3, 6, 12, 24].includes(watchedExportDelayHours)) {
+    throw new Error("Unsupported watched export delay.");
+  }
 
   return {
     scope,
@@ -864,6 +868,7 @@ function parseHostedSyncSettings(value: unknown): HostedSyncSettings {
     likeThreshold,
     loveThreshold,
     syncIntervalMinutes,
+    watchedExportDelayHours,
     optionalCatalogsEnabled: boolValue(record.optionalCatalogsEnabled, "optionalCatalogsEnabled")
   };
 }
@@ -1459,6 +1464,15 @@ function configurePage(origin: string): string {
                     <option value="60">60 minutes</option>
                   </select>
                 </label>
+                <label>Stremio to Trakt safety delay
+                  <select name="watchedExportDelayHours">
+                    <option value="0">No delay</option>
+                    <option value="3">3 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="12">12 hours</option>
+                    <option value="24">24 hours</option>
+                  </select>
+                </label>
               </div>
             </details>
           </div>
@@ -1775,7 +1789,13 @@ function configurePage(origin: string): string {
       for (const name of ["watchedEnabled", "ratingSyncEnabled", "libraryWatchlistEnabled", "optionalCatalogsEnabled"]) {
         form.elements[name].checked = Boolean(body[name]);
       }
-      for (const name of ["scope", "syncIntervalMinutes", "likeThreshold", "loveThreshold"]) {
+      for (const name of [
+        "scope",
+        "syncIntervalMinutes",
+        "watchedExportDelayHours",
+        "likeThreshold",
+        "loveThreshold"
+      ]) {
         form.elements[name].value = String(body[name]);
       }
       currentScope = String(body.scope || "account-preview");
@@ -1988,6 +2008,7 @@ function configurePage(origin: string): string {
         likeThreshold: Number(form.elements.likeThreshold.value),
         loveThreshold: Number(form.elements.loveThreshold.value),
         syncIntervalMinutes: Number(form.elements.syncIntervalMinutes.value),
+        watchedExportDelayHours: Number(form.elements.watchedExportDelayHours.value),
         optionalCatalogsEnabled: form.elements.optionalCatalogsEnabled.checked
       };
       const result = byId("sync-settings-result");
@@ -2153,6 +2174,9 @@ function configurePage(origin: string): string {
         return;
       }
       result.textContent = "Live synchronization active. " + body.applied + " operations applied" +
+        (body.deferredWatchedExports
+          ? "; " + body.deferredWatchedExports + " Stremio watches waiting for the safety delay"
+          : "") +
         (body.conflicts ? "; " + body.conflicts + " rating conflicts left unchanged" : "") + ".";
       previewFingerprint = "";
       byId("live-confirmation").value = "";

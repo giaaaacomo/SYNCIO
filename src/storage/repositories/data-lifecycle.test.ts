@@ -14,12 +14,13 @@ test("deletes all SYNCIO user data in foreign-key-safe order", async () => {
     "DELETE FROM change_ledger WHERE user_id = ?",
     "DELETE FROM sync_conflicts WHERE user_id = ?",
     "DELETE FROM rating_snapshots WHERE user_id = ?",
+    "DELETE FROM watched_reconciliation_candidates WHERE user_id = ?",
     "DELETE FROM sync_runs WHERE user_id = ?",
     "DELETE FROM connections WHERE user_id = ?",
     "DELETE FROM sync_settings WHERE user_id = ?",
     "DELETE FROM users WHERE id = ?"
   ]);
-  assert.deepEqual(db.bindings, Array.from({ length: 9 }, () => ["self-host"]));
+  assert.deepEqual(db.bindings, Array.from({ length: 10 }, () => ["self-host"]));
 });
 
 class RecordingD1 implements D1DatabaseLike {
