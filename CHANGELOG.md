@@ -2,6 +2,19 @@
 
 All notable changes to SYNCIO are documented here.
 
+## [0.3.3] - 2026-07-28
+
+### Added
+
+- hourly watched reconciliation keeps Stremio's native Trakt integration as the immediate path;
+- persistent first-seen candidates export missing Stremio watches only after a configurable six-hour safety delay;
+- pending reconciliation state is included in privacy exports and removed on disconnect or full deletion.
+
+### Changed
+
+- the advanced sync settings expose safety-delay choices from immediate export through 24 hours;
+- activation reports watched exports that are waiting for the safety window.
+
 ## [0.3.2] - 2026-07-28
 
 ### Changed
@@ -43,5 +56,6 @@ First public technical beta.
 - rating discovery is limited to known items and processed in bounded batches;
 - existing installations require their own Cloudflare deployment to receive updates.
 
+[0.3.3]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.3
 [0.3.2]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.2
 [0.3.1]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.1
