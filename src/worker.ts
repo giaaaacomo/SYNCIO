@@ -2194,50 +2194,66 @@ function configurePage(origin: string): string {
     async function runInitialImport(initialResult) {
       const button = byId("initial-import");
       const result = byId("sync-preview-result");
-      const maxFollowUpRuns = 6;
-      let followUpRuns = 0;
       let batches = initialResult ? 1 : 0;
       let applied = Number(initialResult?.applied || 0);
       let deferred = Number(initialResult?.deferredWatchedExports || 0);
       let more = initialResult
         ? Boolean(initialResult.hasMore || initialResult.ratingNextOffset)
         : true;
-      let pausedReason = "";
+      let stoppedReason = "";
+      let previousProgress = "";
+      let stagnantRuns = 0;
       button.disabled = true;
       try {
-        while (more && followUpRuns < maxFollowUpRuns) {
+        while (more) {
           result.textContent = "Initial import: running batch " + (batches + 1) +
             ", " + applied + " operations applied so far.";
           const { response, body } = await setupApi("/api/sync/run", { method: "POST" });
           if (!response.ok) {
             const retry = Number(body.retryAfterSeconds);
-            pausedReason = Number.isFinite(retry) && retry > 0
-              ? "Trakt rate limit reached; retry in " + Math.ceil(retry) + " seconds."
-              : (body.error || "Initial import batch failed.");
+            if (Number.isFinite(retry) && retry > 0) {
+              const waitSeconds = Math.ceil(retry);
+              result.textContent = "Initial import: Trakt rate limit reached. Resuming automatically in " +
+                waitSeconds + " seconds.";
+              await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+              continue;
+            }
+            stoppedReason = body.error || "Initial import batch failed.";
             break;
           }
           if (body.status === "skipped") {
-            pausedReason = body.reason || "Another synchronization run is active.";
+            const retry = Math.max(1, Number(body.retryAfterSeconds) || 5);
+            result.textContent = (body.reason || "Another synchronization run is active.") +
+              " Retrying automatically in " + Math.ceil(retry) + " seconds.";
+            await new Promise((resolve) => setTimeout(resolve, retry * 1000));
+            continue;
+          }
+          const batchApplied = Number(body.applied || 0);
+          const nextMore = Boolean(body.hasMore || body.ratingNextOffset);
+          const progress = [
+            body.ratingNextOffset || 0,
+            body.deferredWatchedExports || 0,
+            body.remainingDifferences ?? body.totalDifferences ?? ""
+          ].join(":");
+          stagnantRuns = nextMore && batchApplied === 0 && progress === previousProgress
+            ? stagnantRuns + 1
+            : 0;
+          previousProgress = progress;
+          if (stagnantRuns >= 2) {
+            stoppedReason = "No progress was made in the latest batch. Retry the import after checking system status.";
             break;
           }
           batches += 1;
-          followUpRuns += 1;
-          applied += Number(body.applied || 0);
+          applied += batchApplied;
           deferred = Number(body.deferredWatchedExports || 0);
-          more = Boolean(body.hasMore || body.ratingNextOffset);
-          if (more && followUpRuns < maxFollowUpRuns) {
-            await new Promise((resolve) => setTimeout(resolve, 750));
-          }
+          more = nextMore;
         }
       } finally {
         button.disabled = false;
       }
-      if (pausedReason) {
-        result.textContent = "Initial import paused after " + batches + " batch" +
-          (batches === 1 ? "" : "es") + " and " + applied + " applied operations. " + pausedReason;
-      } else if (more) {
-        result.textContent = "Initial import paused safely after " + batches + " batches and " +
-          applied + " applied operations. Select Continue initial import to resume.";
+      if (stoppedReason) {
+        result.textContent = "Initial import stopped after " + batches + " batch" +
+          (batches === 1 ? "" : "es") + " and " + applied + " applied operations. " + stoppedReason;
       } else {
         result.textContent = "Initial import caught up: " + applied + " operations applied across " +
           batches + " batch" + (batches === 1 ? "" : "es") +

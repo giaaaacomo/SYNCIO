@@ -60,7 +60,8 @@ The default delegated Trakt mode reuses Stremio's existing authorization. It doe
 
 SYNCIO checks hourly. By default, a Stremio watch that is still missing from Trakt must persist for six hours before
 SYNCIO exports it, leaving the native Stremio integration as the immediate path while still repairing missed watches.
-Large first imports are processed as resumable groups of guarded 250-operation batches from the configure page.
+Large first imports are processed automatically as a sequence of guarded 250-operation batches from the configure
+page. Each batch uses a separate Worker invocation, and Trakt rate-limit waits resume automatically.
 
 For a Stremio account created with Facebook, choose **Facebook** in the first configuration step. SYNCIO links to Stremio's official password setup procedure; adding a password does not disable Facebook login. SYNCIO never requests or processes Facebook credentials or tokens.
 
