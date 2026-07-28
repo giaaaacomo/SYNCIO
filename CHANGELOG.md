@@ -2,6 +2,13 @@
 
 All notable changes to SYNCIO are documented here.
 
+## [0.3.5] - 2026-07-28
+
+### Fixed
+
+- manual and scheduled import runs reuse their already verified preview instead of fetching the full account twice,
+  keeping paginated personal libraries within the Cloudflare subrequest limit.
+
 ## [0.3.4] - 2026-07-28
 
 ### Added
@@ -68,6 +75,7 @@ First public technical beta.
 - rating discovery is limited to known items and processed in bounded batches;
 - existing installations require their own Cloudflare deployment to receive updates.
 
+[0.3.5]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.5
 [0.3.4]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.4
 [0.3.3]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.3
 [0.3.2]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.2

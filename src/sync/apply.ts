@@ -43,6 +43,24 @@ export async function applyWorkerSync(input: {
   return applyWorkerSyncForScopes(input, ["test", "account"]);
 }
 
+export async function applyWorkerSyncFromPreview(
+  input: {
+    db: D1DatabaseLike;
+    userId: string;
+    encryptionKey: string;
+    expectedFingerprint: string;
+    fetcher: typeof fetch;
+    traktApiBase?: string | undefined;
+    stremioApiBase?: string | undefined;
+    stremioTraktClientId?: string | undefined;
+    cinemetaVideoIdsBase?: string | undefined;
+    stremioLikesBase?: string | undefined;
+  },
+  previewReport: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  return applyWorkerSyncForScopes(input, ["test", "account"], previewReport);
+}
+
 export async function activateWorkerSync(input: {
   db: D1DatabaseLike;
   userId: string;
@@ -78,7 +96,8 @@ async function applyWorkerSyncForScopes(
     cinemetaVideoIdsBase?: string | undefined;
     stremioLikesBase?: string | undefined;
   },
-  allowedScopes: Array<"test" | "account-preview" | "account">
+  allowedScopes: Array<"test" | "account-preview" | "account">,
+  previewReport?: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const settings = await getHostedSyncSettings(input.db, input.userId);
   if (!allowedScopes.includes(settings.scope)) throw new Error("Apply is not enabled for the current sync mode.");
@@ -87,7 +106,7 @@ async function applyWorkerSyncForScopes(
   }
   if (settings.removalsEnabled) throw new Error("Removal sync is not supported.");
 
-  const report = await previewWorkerSync(input);
+  const report = previewReport ?? await previewWorkerSync(input);
   const operations = extractOperations(report);
   const ratingState = extractRatingState(report);
   const ratingCursor = extractRatingCursor(report);

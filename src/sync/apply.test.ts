@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import {
   activateWorkerSync,
   applyWorkerSync,
+  applyWorkerSyncFromPreview,
   buildTraktHistoryPayload,
   buildTraktRatingsPayload,
   buildTraktWatchlistPayload,
   watchedReconciliationKey
 } from "./apply.js";
 import type { D1DatabaseLike } from "../storage/d1.js";
+import { operationFingerprint } from "./preview.js";
 
 test("refuses apply in preview-only mode before any external request", async () => {
   let fetched = false;
@@ -32,6 +34,62 @@ test("refuses apply in preview-only mode before any external request", async () 
       throw new Error("unexpected fetch");
     }
   }), /not enabled for the current sync mode/);
+  assert.equal(fetched, false);
+});
+
+test("reuses a verified preview without reading external accounts twice", async () => {
+  let fetched = false;
+  const db: D1DatabaseLike = {
+    prepare(query: string) {
+      return {
+        bind() { return this; },
+        async first<T>() {
+          if (query.includes("SELECT scope")) return {
+            scope: "account",
+            history_mode: "union",
+            watched_enabled: 1,
+            rating_sync_enabled: 1,
+            library_watchlist_enabled: 1,
+            removals_enabled: 0,
+            like_threshold: 7,
+            love_threshold: 9,
+            sync_interval_minutes: 60,
+            watched_export_delay_hours: 6,
+            optional_catalogs_enabled: 0
+          } as T;
+          if (query.includes("live_activated_at")) return {
+            live_activated_at: "2026-07-28T00:00:00.000Z",
+            live_activation_fingerprint: "a".repeat(64)
+          } as T;
+          return null;
+        },
+        async run() { return { success: true }; }
+      };
+    }
+  };
+  const fingerprint = await operationFingerprint([], []);
+  const result = await applyWorkerSyncFromPreview({
+    db,
+    userId: "self-host",
+    encryptionKey: "unused",
+    expectedFingerprint: fingerprint,
+    fetcher: async () => {
+      fetched = true;
+      throw new Error("unexpected fetch");
+    }
+  }, {
+    operations: {
+      total: 0,
+      totalDifferences: 0,
+      hasMore: false,
+      fingerprint,
+      items: []
+    },
+    ratingState: { snapshots: [], conflicts: [] },
+    ratingScan: { cursorKey: "ratings-known-items", nextOffset: 0 }
+  });
+
+  assert.equal(result.applied, 0);
   assert.equal(fetched, false);
 });
 

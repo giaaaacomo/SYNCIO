@@ -1,7 +1,7 @@
 import type { D1DatabaseLike } from "../storage/d1.js";
 import { finishSyncRun, startSyncRun } from "../storage/repositories/sync-runs.js";
 import { getHostedSyncSettings, getLiveSyncActivation } from "../storage/repositories/users.js";
-import { applyWorkerSync } from "./apply.js";
+import { applyWorkerSyncFromPreview } from "./apply.js";
 import { previewWorkerSync } from "./preview.js";
 import { acquireSyncRunLease, releaseSyncRunLease } from "../storage/repositories/sync-run-lock.js";
 
@@ -40,7 +40,10 @@ export async function runScheduledSync(input: {
         throw new Error("Scheduled preview returned an invalid operation summary.");
       }
       plannedChanges = operations.total;
-      const result = await applyWorkerSync({ ...input, expectedFingerprint: operations.fingerprint });
+      const result = await applyWorkerSyncFromPreview(
+        { ...input, expectedFingerprint: operations.fingerprint },
+        preview
+      );
       await finishSyncRun(input.db, runId, "succeeded", plannedChanges, null);
       return { ...result, status: "succeeded", runId, plannedChanges };
     } catch (error) {
