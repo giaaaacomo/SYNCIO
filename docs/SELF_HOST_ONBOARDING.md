@@ -19,7 +19,8 @@ Version 0.3.2 is a public technical beta. Begin with isolated test accounts and 
 9. Link the Stremio account that already has the intended Trakt account connected.
 10. Enter the expected Trakt username without the leading `@` and enable `Stremio Delegated`.
 11. Run a read-only full-account preview and confirm both account guards.
-12. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch before arming the hourly cron.
+12. For live scheduling, confirm the exact preview with `ENABLE SYNCIO`; SYNCIO applies that first batch, arms the
+    hourly cron, and continues the initial import in bounded, resumable batches.
 13. Return to Stremio and complete the addon installation.
 
 ## Find The Worker URL
@@ -56,7 +57,10 @@ Less common sync controls, including optional catalogs, the internal account sco
 delay, are grouped under **Advanced sync settings**. The recommended six-hour delay keeps hourly checks active while
 giving Stremio's native Trakt integration time to handle new watches first.
 
-Each run applies at most 250 deterministic differences. Larger first imports converge over later hourly runs. Returning the mode to Preview only disarms live scheduling immediately. History removals remain disabled.
+Each run applies at most 250 deterministic differences. During onboarding, the browser can invoke up to six additional
+guarded batches in sequence and exposes **Continue initial import** when more work remains. Rate limits pause the
+sequence without losing progress, and a D1 lease prevents overlap with the hourly cron. Returning the mode to Preview
+only disarms live scheduling immediately. History removals remain disabled.
 
 ## Setup Token
 

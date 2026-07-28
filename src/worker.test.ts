@@ -44,6 +44,16 @@ test("links configure onboarding to the current Trakt app creation page", async 
   assert.doesNotMatch(body, /trakt\.tv\/oauth\/applications/);
 });
 
+test("offers a bounded resumable initial import flow", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
+  const body = await response.text();
+
+  assert.match(body, /Activate and start import/);
+  assert.match(body, /Continue initial import/);
+  assert.match(body, /const maxFollowUpRuns = 6/);
+  assert.match(body, /\/api\/sync\/run/);
+});
+
 test("guides Facebook-created Stremio accounts through the official password flow", async () => {
   const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
   const body = await response.text();

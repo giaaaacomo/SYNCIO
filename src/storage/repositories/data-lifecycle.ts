@@ -189,6 +189,7 @@ export async function disconnectSyncioAccounts(db: D1DatabaseLike, userId: strin
 export async function deleteSyncioUserData(db: D1DatabaseLike, userId: string): Promise<void> {
   const tables = [
     "trakt_device_sessions",
+    "sync_run_locks",
     "sync_cursors",
     "change_ledger",
     "sync_conflicts",

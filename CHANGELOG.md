@@ -2,6 +2,18 @@
 
 All notable changes to SYNCIO are documented here.
 
+## [0.3.4] - 2026-07-28
+
+### Added
+
+- activation can continue large initial imports through bounded, resumable batches in the configure UI;
+- a leased D1 run lock prevents manual import batches and the hourly cron from overlapping.
+
+### Changed
+
+- each apply response reports total pre-run differences and whether additional batches remain;
+- rate limits pause the initial import without losing progress.
+
 ## [0.3.3] - 2026-07-28
 
 ### Added
@@ -56,6 +68,7 @@ First public technical beta.
 - rating discovery is limited to known items and processed in bounded batches;
 - existing installations require their own Cloudflare deployment to receive updates.
 
+[0.3.4]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.4
 [0.3.3]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.3
 [0.3.2]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.2
 [0.3.1]: https://github.com/giaaaacomo/SYNCIO/releases/tag/v0.3.1

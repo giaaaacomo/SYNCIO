@@ -9,7 +9,7 @@ SYNCIO has been validated on a staging Cloudflare Worker and is being prepared a
 - D1 storage adapter: `src/storage/d1.ts`
 - D1 repositories: `src/storage/repositories/users.ts`, `src/storage/repositories/connections.ts`
 - AES-GCM secret helper: `src/crypto/secrets.ts`
-- Migrations: `migrations/0001_initial.sql` through `migrations/0006_watched_reconciliation.sql`
+- Migrations: `migrations/0001_initial.sql` through `migrations/0007_sync_run_lock.sql`
 - Generic Wrangler config: `wrangler.jsonc`
 - Worker checks:
 
@@ -79,6 +79,8 @@ The first value is `SYNCIO_ENCRYPTION_KEY`; the second is `SYNCIO_SETUP_TOKEN`. 
 - Stremio account writes rely on Stremio's internal account API, not the public Addon SDK contract. Account identity is verified before an auth key is accepted.
 - The free Workers plan currently allows 50 external subrequests per invocation. Cinemeta lookups and Stremio rating checks are batched, Trakt collections use bounded pagination, and the sync interval is one hour.
 - Each run applies at most 250 logical differences. Ledger entries are inserted in grouped D1 queries to keep first imports within free-tier query limits.
+- The configure UI can run up to six additional guarded batches per initial-import round and resume later after a
+  rate limit. A leased D1 lock prevents manual and scheduled runs from overlapping.
 - Stremio-to-Trakt watched mismatches use a six-hour reconciliation window by default. Hourly checks preserve the
   first-seen time only while the mismatch remains continuous, giving Stremio's native Trakt integration time to act.
 - Read [SELF_HOST_ONBOARDING.md](SELF_HOST_ONBOARDING.md) for the intended setup flow and privacy boundary.

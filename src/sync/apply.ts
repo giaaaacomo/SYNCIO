@@ -91,6 +91,7 @@ async function applyWorkerSyncForScopes(
   const operations = extractOperations(report);
   const ratingState = extractRatingState(report);
   const ratingCursor = extractRatingCursor(report);
+  const operationProgress = extractOperationProgress(report);
   const fingerprint = await operationFingerprint(operations, ratingState.conflicts);
   if (fingerprint !== input.expectedFingerprint) {
     throw new Error("Preview changed. Run a new preview before applying.");
@@ -103,7 +104,8 @@ async function applyWorkerSyncForScopes(
       applied: 0,
       conflicts: ratingState.conflicts.length,
       fingerprint,
-      ratingNextOffset: ratingCursor.nextOffset
+      ratingNextOffset: ratingCursor.nextOffset,
+      ...operationProgress
     };
   }
 
@@ -251,7 +253,8 @@ async function applyWorkerSyncForScopes(
     traktRatingOperations: traktRatingOperations.length,
     conflicts: ratingState.conflicts.length,
     ratingNextOffset: ratingCursor.nextOffset,
-    fingerprint
+    fingerprint,
+    ...operationProgress
   };
 }
 
@@ -267,6 +270,28 @@ function extractRatingState(report: Record<string, unknown>): {
   return {
     snapshots: snapshots as RatingSnapshot[],
     conflicts: conflicts as RatingConflict[]
+  };
+}
+
+function extractOperationProgress(report: Record<string, unknown>): {
+  batchSize: number;
+  totalDifferencesBefore: number;
+  hasMore: boolean;
+} {
+  const operations = report.operations;
+  if (!operations || typeof operations !== "object") throw new Error("Preview has no operation progress.");
+  const value = operations as { total?: unknown; totalDifferences?: unknown; hasMore?: unknown };
+  if (
+    typeof value.total !== "number"
+    || typeof value.totalDifferences !== "number"
+    || typeof value.hasMore !== "boolean"
+  ) {
+    throw new Error("Preview operation progress is invalid.");
+  }
+  return {
+    batchSize: value.total,
+    totalDifferencesBefore: value.totalDifferences,
+    hasMore: value.hasMore
   };
 }
 

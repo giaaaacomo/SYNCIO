@@ -1495,10 +1495,11 @@ function configurePage(origin: string): string {
         <div class="actions">
           <button id="sync-preview" type="button">Run preview</button>
           <button id="sync-apply" class="hidden" type="button">Apply preview</button>
+          <button id="initial-import" class="secondary hidden" type="button">Continue initial import</button>
         </div>
         <div class="activation-box hidden" id="live-activation">
           <label>Confirmation <input id="live-confirmation" autocomplete="off" placeholder="ENABLE SYNCIO"></label>
-          <button id="sync-activate" type="button">Activate hourly sync</button>
+          <button id="sync-activate" type="button">Activate and start import</button>
         </div>
         <p id="sync-preview-result" class="result muted"></p>
         <pre id="sync-preview-output" class="hidden"></pre>
@@ -1657,6 +1658,7 @@ function configurePage(origin: string): string {
         locked: !installUnlocked,
         label: flowState.live ? "Ready to install" : (flowState.previewed ? "Available" : "Waiting for sync check")
       });
+      byId("initial-import").classList.toggle("hidden", !flowState.live);
     }
 
     function continueTo(stepName) {
@@ -2183,8 +2185,66 @@ function configurePage(origin: string): string {
       byId("live-activation").classList.add("hidden");
       byId("sync-apply").classList.add("hidden");
       await Promise.all([refreshSettings(), refreshStatus()]);
+      await runInitialImport(body);
       continueTo("install");
     });
+
+    byId("initial-import").addEventListener("click", () => runInitialImport());
+
+    async function runInitialImport(initialResult) {
+      const button = byId("initial-import");
+      const result = byId("sync-preview-result");
+      const maxFollowUpRuns = 6;
+      let followUpRuns = 0;
+      let batches = initialResult ? 1 : 0;
+      let applied = Number(initialResult?.applied || 0);
+      let deferred = Number(initialResult?.deferredWatchedExports || 0);
+      let more = initialResult
+        ? Boolean(initialResult.hasMore || initialResult.ratingNextOffset)
+        : true;
+      let pausedReason = "";
+      button.disabled = true;
+      try {
+        while (more && followUpRuns < maxFollowUpRuns) {
+          result.textContent = "Initial import: running batch " + (batches + 1) +
+            ", " + applied + " operations applied so far.";
+          const { response, body } = await setupApi("/api/sync/run", { method: "POST" });
+          if (!response.ok) {
+            const retry = Number(body.retryAfterSeconds);
+            pausedReason = Number.isFinite(retry) && retry > 0
+              ? "Trakt rate limit reached; retry in " + Math.ceil(retry) + " seconds."
+              : (body.error || "Initial import batch failed.");
+            break;
+          }
+          if (body.status === "skipped") {
+            pausedReason = body.reason || "Another synchronization run is active.";
+            break;
+          }
+          batches += 1;
+          followUpRuns += 1;
+          applied += Number(body.applied || 0);
+          deferred = Number(body.deferredWatchedExports || 0);
+          more = Boolean(body.hasMore || body.ratingNextOffset);
+          if (more && followUpRuns < maxFollowUpRuns) {
+            await new Promise((resolve) => setTimeout(resolve, 750));
+          }
+        }
+      } finally {
+        button.disabled = false;
+      }
+      if (pausedReason) {
+        result.textContent = "Initial import paused after " + batches + " batch" +
+          (batches === 1 ? "" : "es") + " and " + applied + " applied operations. " + pausedReason;
+      } else if (more) {
+        result.textContent = "Initial import paused safely after " + batches + " batches and " +
+          applied + " applied operations. Select Continue initial import to resume.";
+      } else {
+        result.textContent = "Initial import caught up: " + applied + " operations applied across " +
+          batches + " batch" + (batches === 1 ? "" : "es") +
+          (deferred ? "; " + deferred + " watched item waiting for the safety delay" : "") + ".";
+      }
+      await refreshStatus();
+    }
 
     function schedulePoll(seconds) {
       clearTimeout(pollTimer);
