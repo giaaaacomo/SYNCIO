@@ -109,7 +109,28 @@ test("groups Stremio watched operations into a Trakt history payload", () => {
         { number: 1, episodes: [{ number: 1 }, { number: 2 }] },
         { number: 2, episodes: [{ number: 1 }] }
       ]
-    }]
+    }],
+    episodes: []
+  });
+});
+
+test("uses TVDB episode ids instead of provider-specific season numbering", () => {
+  const operation = {
+    direction: "stremio-to-trakt" as const,
+    kind: "watched-episode" as const,
+    imdb: "tt12343534",
+    title: "Jujutsu Kaisen",
+    season: 3,
+    episode: 4
+  };
+
+  assert.deepEqual(buildTraktHistoryPayload(
+    [operation],
+    new Map([["tt12343534:3:4", 11547510]])
+  ), {
+    movies: [],
+    shows: [],
+    episodes: [{ ids: { tvdb: 11547510 } }]
   });
 });
 

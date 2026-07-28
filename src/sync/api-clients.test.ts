@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getCinemetaVideoSets, traktGetAllPages } from "./api-clients.js";
+import { getCinemetaEpisodeTvdbIds, getCinemetaVideoSets, traktGetAllPages } from "./api-clients.js";
 import { TraktApiError } from "../trakt/api-error.js";
 
 test("reads every declared Trakt page", async () => {
@@ -118,4 +118,30 @@ test("skips missing Cinemeta metadata without discarding valid series", async ()
     name: "Valid Show",
     videos: ["tt-valid:1:1", "tt-valid:1:2"]
   }]);
+});
+
+test("maps Cinemeta video ids to provider-independent TVDB episode ids", async () => {
+  const requested: string[] = [];
+  const result = await getCinemetaEpisodeTvdbIds(
+    ["tt12343534"],
+    async (input) => {
+      requested.push(String(input));
+      return Response.json({
+        meta: {
+          videos: [
+            { id: "tt12343534:3:4", tvdb_id: 11547510 },
+            { id: "tt12343534:3:5", tvdb_id: 11547511 },
+            { id: "tt12343534:3:6" }
+          ]
+        }
+      });
+    },
+    "https://cinemeta.test/meta/series"
+  );
+
+  assert.deepEqual(requested, ["https://cinemeta.test/meta/series/tt12343534.json"]);
+  assert.deepEqual(Array.from(result), [
+    ["tt12343534:3:4", 11547510],
+    ["tt12343534:3:5", 11547511]
+  ]);
 });

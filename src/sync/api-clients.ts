@@ -20,6 +20,34 @@ export interface CinemetaVideoSet {
   videos: string[];
 }
 
+export async function getCinemetaEpisodeTvdbIds(
+  imdbIds: string[],
+  fetcher: typeof fetch,
+  endpoint = "https://v3-cinemeta.strem.io/meta/series/"
+): Promise<Map<string, number>> {
+  const output = new Map<string, number>();
+  await Promise.all(Array.from(new Set(imdbIds)).map(async (imdbId) => {
+    const response = await fetcher(`${endpoint.replace(/\/?$/, "/")}${encodeURIComponent(imdbId)}.json`);
+    if (!response.ok) throw new Error(`Cinemeta ${imdbId} metadata request failed with HTTP ${response.status}.`);
+    const payload = recordValue(await response.json(), `Cinemeta ${imdbId} metadata response`);
+    const meta = recordValue(payload.meta, `Cinemeta ${imdbId} metadata`);
+    if (!Array.isArray(meta.videos)) throw new Error(`Cinemeta ${imdbId} metadata has no videos array.`);
+    for (const value of meta.videos) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const video = value as Record<string, unknown>;
+      if (
+        typeof video.id === "string"
+        && typeof video.tvdb_id === "number"
+        && Number.isInteger(video.tvdb_id)
+        && video.tvdb_id > 0
+      ) {
+        output.set(video.id, video.tvdb_id);
+      }
+    }
+  }));
+  return output;
+}
+
 export type StremioRatingStatus = "watched" | "liked" | "loved" | null;
 
 export interface TraktPaginatedResult {

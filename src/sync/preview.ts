@@ -35,6 +35,7 @@ export interface BaselineOperation {
 const RATING_CURSOR_KEY = "ratings-known-items";
 const RATING_BATCH_SIZE = 10;
 export const MAX_OPERATIONS_PER_RUN = 250;
+export const MAX_EPISODE_SHOWS_PER_RUN = 20;
 
 export async function previewWorkerSync(input: {
   db: D1DatabaseLike;
@@ -256,7 +257,21 @@ export function operationBatch(
   baseline: BaselineOperation[],
   ratingOperations: BaselineOperation[]
 ): BaselineOperation[] {
-  return [...ratingOperations, ...baseline].slice(0, MAX_OPERATIONS_PER_RUN);
+  const output: BaselineOperation[] = [];
+  const episodeShows = new Set<string>();
+  for (const operation of [...ratingOperations, ...baseline]) {
+    if (
+      operation.direction === "stremio-to-trakt"
+      && operation.kind === "watched-episode"
+      && !episodeShows.has(operation.imdb)
+    ) {
+      if (episodeShows.size >= MAX_EPISODE_SHOWS_PER_RUN) continue;
+      episodeShows.add(operation.imdb);
+    }
+    output.push(operation);
+    if (output.length >= MAX_OPERATIONS_PER_RUN) break;
+  }
+  return output;
 }
 
 export async function buildRatingOperations(

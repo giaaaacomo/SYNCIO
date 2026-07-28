@@ -5,6 +5,7 @@ import {
   buildRatingOperations,
   mapStremioRating,
   mapTraktRating,
+  MAX_EPISODE_SHOWS_PER_RUN,
   MAX_OPERATIONS_PER_RUN,
   operationBatch
 } from "./preview.js";
@@ -265,6 +266,21 @@ test("caps each account run to a bounded operation batch", () => {
   assert.equal(batch.length, MAX_OPERATIONS_PER_RUN);
   assert.equal(batch[0]?.kind, "rating-movie");
   assert.equal(batch.at(-1)?.imdb, "tt-248");
+});
+
+test("bounds episode metadata lookups to a safe number of shows per run", () => {
+  const baseline = Array.from({ length: MAX_EPISODE_SHOWS_PER_RUN + 5 }, (_, index) => ({
+    direction: "stremio-to-trakt" as const,
+    kind: "watched-episode" as const,
+    imdb: `tt-show-${index}`,
+    title: null,
+    season: 1,
+    episode: 1
+  }));
+
+  const batch = operationBatch(baseline, []);
+  assert.equal(batch.length, MAX_EPISODE_SHOWS_PER_RUN);
+  assert.equal(new Set(batch.map((item) => item.imdb)).size, MAX_EPISODE_SHOWS_PER_RUN);
 });
 
 function ratingFetcher(statuses: Map<string, string>): typeof fetch {

@@ -10,6 +10,7 @@ import {
 import { fetchStremioIdentity } from "../stremio/account.js";
 import { fetchTraktIdentity } from "../trakt/device-oauth.js";
 import {
+  getCinemetaEpisodeTvdbIds,
   getCinemetaVideoSets,
   getStremioLibrary,
   sendStremioRatingStatus,
@@ -38,6 +39,7 @@ export async function applyWorkerSync(input: {
   stremioApiBase?: string | undefined;
   stremioTraktClientId?: string | undefined;
   cinemetaVideoIdsBase?: string | undefined;
+  cinemetaMetaBase?: string | undefined;
   stremioLikesBase?: string | undefined;
 }): Promise<Record<string, unknown>> {
   return applyWorkerSyncForScopes(input, ["test", "account"]);
@@ -54,6 +56,7 @@ export async function applyWorkerSyncFromPreview(
     stremioApiBase?: string | undefined;
     stremioTraktClientId?: string | undefined;
     cinemetaVideoIdsBase?: string | undefined;
+    cinemetaMetaBase?: string | undefined;
     stremioLikesBase?: string | undefined;
   },
   previewReport: Record<string, unknown>
@@ -94,6 +97,7 @@ async function applyWorkerSyncForScopes(
     stremioApiBase?: string | undefined;
     stremioTraktClientId?: string | undefined;
     cinemetaVideoIdsBase?: string | undefined;
+    cinemetaMetaBase?: string | undefined;
     stremioLikesBase?: string | undefined;
   },
   allowedScopes: Array<"test" | "account-preview" | "account">,
@@ -210,28 +214,70 @@ async function applyWorkerSyncForScopes(
   const historyOperations = toTrakt.filter((item) =>
     item.kind === "watched-movie" || item.kind === "watched-episode"
   );
+  const historyMovieOperations = historyOperations.filter((item) => item.kind === "watched-movie");
+  const historyEpisodeOperations = historyOperations.filter((item) => item.kind === "watched-episode");
   const watchlistOperations = toTrakt.filter((item) =>
     item.kind === "watchlist-movie" || item.kind === "watchlist-series"
   );
   const traktRatingOperations = toTrakt.filter((item) =>
     item.kind === "rating-movie" || item.kind === "rating-series"
   );
-  if (historyOperations.length > 0) {
-    await traktPost(
+  let acceptedHistoryOperations: BaselineOperation[] = [];
+  let rejectedHistoryOperations = 0;
+  let episodeTvdbIds = new Map<string, number>();
+  if (historyEpisodeOperations.length > 0) {
+    episodeTvdbIds = await getCinemetaEpisodeTvdbIds(
+      historyEpisodeOperations.map((item) => item.imdb),
+      input.fetcher,
+      input.cinemetaMetaBase
+    );
+    const missing = historyEpisodeOperations.filter((item) =>
+      !episodeTvdbIds.has(`${item.imdb}:${item.season}:${item.episode}`)
+    );
+    if (missing.length > 0) {
+      throw new Error(`Cinemeta has no TVDB mapping for ${missing.length} watched episode operation(s).`);
+    }
+  }
+  if (historyMovieOperations.length > 0) {
+    const response = await traktPost(
       "/sync/history",
-      buildTraktHistoryPayload(historyOperations),
+      buildTraktHistoryPayload(historyMovieOperations),
       credentials.trakt.clientId,
       credentials.trakt.accessToken,
       input.fetcher,
       input.traktApiBase
     );
-    await recordOperations(input.db, input.userId, historyOperations);
+    const rejectedImdbIds = rejectedHistoryMovieIds(response);
+    const accepted = historyMovieOperations.filter((item) => !rejectedImdbIds.has(item.imdb));
+    acceptedHistoryOperations.push(...accepted);
+    rejectedHistoryOperations += historyMovieOperations.length - accepted.length;
+    await recordOperations(input.db, input.userId, accepted);
     await clearWatchedReconciliation(
       input.db,
       input.userId,
-      watchedCandidates
-        .filter((item) => readyWatchedKeys.has(item.candidate.key))
-        .map((item) => item.candidate.key)
+      reconciliationKeysForOperations(watchedCandidates, readyWatchedKeys, historyMovieOperations)
+    );
+  }
+  if (historyEpisodeOperations.length > 0) {
+    const response = await traktPost(
+      "/sync/history",
+      buildTraktHistoryPayload(historyEpisodeOperations, episodeTvdbIds),
+      credentials.trakt.clientId,
+      credentials.trakt.accessToken,
+      input.fetcher,
+      input.traktApiBase
+    );
+    const rejectedTvdbIds = rejectedHistoryEpisodeIds(response);
+    const accepted = historyEpisodeOperations.filter((item) =>
+      !rejectedTvdbIds.has(episodeTvdbIds.get(`${item.imdb}:${item.season}:${item.episode}`)!)
+    );
+    acceptedHistoryOperations.push(...accepted);
+    rejectedHistoryOperations += historyEpisodeOperations.length - accepted.length;
+    await recordOperations(input.db, input.userId, accepted);
+    await clearWatchedReconciliation(
+      input.db,
+      input.userId,
+      reconciliationKeysForOperations(watchedCandidates, readyWatchedKeys, historyEpisodeOperations)
     );
   }
   if (watchlistOperations.length > 0) {
@@ -258,16 +304,19 @@ async function applyWorkerSyncForScopes(
   }
   await saveRatingState(input.db, input.userId, ratingState.snapshots, ratingState.conflicts);
   await setSyncCursor(input.db, input.userId, ratingCursor.key, ratingCursor.nextOffset);
+  const nonHistoryTraktOperations = toTrakt.length - historyOperations.length;
+  const appliedTraktOperations = nonHistoryTraktOperations + acceptedHistoryOperations.length;
   return {
     ok: true,
-    applied: toStremio.length + toTrakt.length,
+    applied: toStremio.length + appliedTraktOperations,
     deferredWatchedExports: reconciliation.deferred,
     watchedExportDelayHours: settings.watchedExportDelayHours,
     stremioOperations: toStremio.length,
     stremioChanges,
     ratingOperations: ratingOperations.length,
-    traktOperations: toTrakt.length,
-    traktHistoryOperations: historyOperations.length,
+    traktOperations: appliedTraktOperations,
+    traktHistoryOperations: acceptedHistoryOperations.length,
+    traktHistoryRejected: rejectedHistoryOperations,
     traktWatchlistOperations: watchlistOperations.length,
     traktRatingOperations: traktRatingOperations.length,
     conflicts: ratingState.conflicts.length,
@@ -314,14 +363,23 @@ function extractOperationProgress(report: Record<string, unknown>): {
   };
 }
 
-export function buildTraktHistoryPayload(operations: BaselineOperation[]): Record<string, unknown> {
+export function buildTraktHistoryPayload(
+  operations: BaselineOperation[],
+  episodeTvdbIds = new Map<string, number>()
+): Record<string, unknown> {
   const movies = operations
     .filter((item) => item.direction === "stremio-to-trakt" && item.kind === "watched-movie")
     .map((item) => ({ ids: { imdb: item.imdb } }));
   const shows = new Map<string, { ids: { imdb: string }; seasons: Array<{ number: number; episodes: Array<{ number: number }> }> }>();
+  const episodes: Array<{ ids: { tvdb: number } }> = [];
   for (const operation of operations) {
     if (operation.direction !== "stremio-to-trakt" || operation.kind !== "watched-episode") continue;
     if (operation.season === undefined || operation.episode === undefined) continue;
+    const tvdbId = episodeTvdbIds.get(`${operation.imdb}:${operation.season}:${operation.episode}`);
+    if (tvdbId !== undefined) {
+      episodes.push({ ids: { tvdb: tvdbId } });
+      continue;
+    }
     let show = shows.get(operation.imdb);
     if (!show) {
       show = { ids: { imdb: operation.imdb }, seasons: [] };
@@ -336,7 +394,49 @@ export function buildTraktHistoryPayload(operations: BaselineOperation[]): Recor
       season.episodes.push({ number: operation.episode });
     }
   }
-  return { movies, shows: Array.from(shows.values()) };
+  return { movies, shows: Array.from(shows.values()), episodes };
+}
+
+function rejectedHistoryMovieIds(response: unknown): Set<string> {
+  return rejectedHistoryIds(response, "movies", "imdb");
+}
+
+function reconciliationKeysForOperations(
+  candidates: Array<{ operation: BaselineOperation; candidate: WatchedReconciliationCandidate }>,
+  readyKeys: Set<string>,
+  operations: BaselineOperation[]
+): string[] {
+  const operationSet = new Set(operations);
+  return candidates
+    .filter((item) => operationSet.has(item.operation) && readyKeys.has(item.candidate.key))
+    .map((item) => item.candidate.key);
+}
+
+function rejectedHistoryEpisodeIds(response: unknown): Set<number> {
+  return rejectedHistoryIds(response, "episodes", "tvdb");
+}
+
+function rejectedHistoryIds<T extends string | number>(
+  response: unknown,
+  kind: "movies" | "episodes",
+  idType: "imdb" | "tvdb"
+): Set<T> {
+  const output = new Set<T>();
+  if (!response || typeof response !== "object" || Array.isArray(response)) return output;
+  const notFound = (response as Record<string, unknown>).not_found;
+  if (!notFound || typeof notFound !== "object" || Array.isArray(notFound)) return output;
+  const values = (notFound as Record<string, unknown>)[kind];
+  if (!Array.isArray(values)) return output;
+  for (const value of values) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const ids = (value as Record<string, unknown>).ids;
+    if (!ids || typeof ids !== "object" || Array.isArray(ids)) continue;
+    const id = (ids as Record<string, unknown>)[idType];
+    if ((idType === "imdb" && typeof id === "string") || (idType === "tvdb" && typeof id === "number")) {
+      output.add(id as T);
+    }
+  }
+  return output;
 }
 
 export function buildTraktWatchlistPayload(operations: BaselineOperation[]): Record<string, unknown> {
