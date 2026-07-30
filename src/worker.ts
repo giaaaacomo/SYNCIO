@@ -1,7 +1,22 @@
+import { authorizeCompanion } from "./auth/companion-auth.js";
 import { authorizeSetup } from "./auth/setup-auth.js";
+import {
+  parseObservationBatch,
+  previewObservations
+} from "./companion/contracts.js";
+import {
+  CompanionPairingError,
+  createCompanionPairingOffer,
+  pairCompanion
+} from "./companion/service.js";
 import { decryptSecret, encryptSecret } from "./crypto/secrets.js";
 import { manifest, SYNCIO_VERSION } from "./manifest.js";
 import { isD1Database, readStorageStatus } from "./storage/d1.js";
+import {
+  listCompanionClients,
+  revokeCompanionClient,
+  type CompanionScope
+} from "./storage/repositories/companion-clients.js";
 import {
   deleteSyncioUserData,
   disconnectSyncioAccounts,
@@ -96,6 +111,63 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
     if (!authorization.ok) return json({ error: authorization.error }, authorization.status);
   }
 
+  if (url.pathname === "/api/companion/pair" && request.method === "POST") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    try {
+      return json(await pairCompanion(env.SYNCIO_DB, SELF_HOST_USER_ID, await request.json()), 201, {
+        "cache-control": "no-store"
+      });
+    } catch (error) {
+      return json(
+        { error: error instanceof Error ? error.message : "Companion pairing failed." },
+        error instanceof CompanionPairingError ? 401 : 400,
+        { "cache-control": "no-store" }
+      );
+    }
+  }
+
+  const companionScope = companionScopeForRoute(url.pathname, request.method);
+  if (companionScope) {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    const authorization = await authorizeCompanion(request, env.SYNCIO_DB, companionScope);
+    if (!authorization.ok) return json({ error: authorization.error }, authorization.status);
+
+    if (url.pathname === "/api/companion/status") {
+      const { id, label, scopes, createdAt, lastSeenAt } = authorization.client;
+      return json({
+        contractVersion: 1,
+        client: { id, label, scopes, createdAt, lastSeenAt },
+        historyImport: {
+          mode: "read-only-preview",
+          completionThreshold: 80,
+          browserNavigationHistory: "not-read"
+        }
+      }, 200, { "cache-control": "no-store" });
+    }
+
+    if (url.pathname === "/api/companion/history/preview") {
+      try {
+        const observations = parseObservationBatch(await request.json());
+        return json(previewObservations(observations), 200, { "cache-control": "no-store" });
+      } catch (error) {
+        return json(
+          { error: error instanceof Error ? error.message : "Invalid companion observations." },
+          400,
+          { "cache-control": "no-store" }
+        );
+      }
+    }
+
+    if (url.pathname === "/api/companion/disconnect") {
+      await revokeCompanionClient(
+        env.SYNCIO_DB,
+        authorization.client.userId,
+        authorization.client.id
+      );
+      return json({ ok: true, disconnected: true }, 200, { "cache-control": "no-store" });
+    }
+  }
+
   if (url.pathname === "/api/setup/settings" && request.method === "GET") {
     if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
     const [settings, activation] = await Promise.all([
@@ -166,6 +238,38 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
       return json({ ok: true, deleted: true });
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : "Deletion failed." }, 400);
+    }
+  }
+
+  if (url.pathname === "/api/setup/companion/pairing" && request.method === "POST") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    return json(
+      await createCompanionPairingOffer(env.SYNCIO_DB, SELF_HOST_USER_ID),
+      201,
+      { "cache-control": "no-store" }
+    );
+  }
+
+  if (url.pathname === "/api/setup/companion/clients" && request.method === "GET") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    return json({
+      contractVersion: 1,
+      clients: await listCompanionClients(env.SYNCIO_DB, SELF_HOST_USER_ID)
+    }, 200, { "cache-control": "no-store" });
+  }
+
+  if (url.pathname === "/api/setup/companion/revoke" && request.method === "POST") {
+    if (!isD1Database(env.SYNCIO_DB)) return json({ error: "D1 binding is not configured." }, 503);
+    try {
+      const body = objectValue(await request.json(), "body");
+      const revoked = await revokeCompanionClient(
+        env.SYNCIO_DB,
+        SELF_HOST_USER_ID,
+        stringValue(body.clientId, "clientId")
+      );
+      return json({ ok: true, revoked });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : "Companion revoke failed." }, 400);
     }
   }
 
@@ -883,6 +987,13 @@ function stringValue(value: unknown, label: string): string {
   throw new Error(`${label} must be a non-empty string.`);
 }
 
+function companionScopeForRoute(pathname: string, method: string): CompanionScope | null {
+  if (pathname === "/api/companion/status" && method === "GET") return "status:read";
+  if (pathname === "/api/companion/history/preview" && method === "POST") return "history:preview";
+  if (pathname === "/api/companion/disconnect" && method === "POST") return "status:read";
+  return null;
+}
+
 function traktAuthModeValue(value: unknown): TraktAuthMode {
   if (value === "direct-oauth" || value === "stremio-delegated") return value;
   throw new Error("Unsupported Trakt transport.");
@@ -1425,6 +1536,27 @@ function configurePage(origin: string): string {
       </div>
     </section>
 
+    <section class="panel protected hidden" id="companion-preparation">
+      <div class="step-heading">
+        <div>
+          <h2>Prepare streaming history <span class="muted">(optional)</span></h2>
+          <p>Recommended if you also watch on Netflix, Prime Video, Disney+ or Crunchyroll. The browser extension reads native viewing activity from those services; it never reads browser history.</p>
+        </div>
+        <span class="step-state" id="companion-state">Not connected</span>
+      </div>
+      <div class="actions">
+        <a class="button secondary" href="https://github.com/giaaaacomo/SYNCIO-companion" target="_blank" rel="noreferrer">Open SYNCIO Companion</a>
+        <button id="companion-pairing" type="button">Generate pairing code</button>
+      </div>
+      <div class="auth-guidance hidden" id="companion-pairing-details">
+        <p>Open the extension options and enter this Worker URL and one-time code:</p>
+        <code id="companion-worker-url">${escapeHtml(origin)}</code>
+        <strong class="user-code" id="companion-pairing-code"></strong>
+        <p class="muted" id="companion-pairing-expiry"></p>
+      </div>
+      <p id="companion-result" class="result muted"></p>
+    </section>
+
     <section class="step step-collapsible protected hidden is-locked" id="step-settings">
       <span class="step-number">3</span>
       <div class="step-content">
@@ -1807,6 +1939,20 @@ function configurePage(origin: string): string {
       updateFlow();
     }
 
+    async function refreshCompanionClients() {
+      const { response, body } = await setupApi("/api/setup/companion/clients");
+      if (!response.ok) throw new Error(body.error || "Companion status failed");
+      const activeClients = Array.isArray(body.clients)
+        ? body.clients.filter((client) => !client.revokedAt)
+        : [];
+      byId("companion-state").textContent = activeClients.length > 0
+        ? "Connected"
+        : "Not connected";
+      byId("companion-result").textContent = activeClients.length > 0
+        ? activeClients.length + (activeClients.length === 1 ? " browser connected." : " browsers connected.")
+        : "";
+    }
+
     function renderAuthorization(authorization) {
       const active = authorization?.state === "awaiting-approval";
       byId("trakt-activate").classList.toggle("hidden", !active);
@@ -1824,7 +1970,7 @@ function configurePage(origin: string): string {
       setupToken = String(new FormData(form).get("setupToken") || "");
       sessionStorage.setItem(tokenKey, setupToken);
       try {
-        await Promise.all([refreshStatus(), refreshSettings()]);
+        await Promise.all([refreshStatus(), refreshSettings(), refreshCompanionClients()]);
         unlockSetup();
         form.reset();
       } catch (error) {
@@ -1852,6 +1998,31 @@ function configurePage(origin: string): string {
           ". Grant expires " + expiry.toLocaleString() + ".";
       } finally {
         if (!rateLimited) button.disabled = false;
+      }
+    });
+
+    byId("companion-pairing").addEventListener("click", async () => {
+      const button = byId("companion-pairing");
+      const result = byId("companion-result");
+      button.disabled = true;
+      result.textContent = "Generating a one-time code";
+      try {
+        const { response, body } = await setupApi("/api/setup/companion/pairing", {
+          method: "POST"
+        });
+        if (!response.ok) {
+          result.textContent = body.error || "Could not generate a pairing code";
+          return;
+        }
+        byId("companion-pairing-code").textContent = body.code;
+        byId("companion-pairing-expiry").textContent =
+          "Expires " + new Date(body.expiresAt).toLocaleTimeString() + ". It can be used once.";
+        byId("companion-pairing-details").classList.remove("hidden");
+        result.textContent = "Pairing code ready.";
+      } catch (error) {
+        result.textContent = error instanceof Error ? error.message : "Could not generate a pairing code";
+      } finally {
+        button.disabled = false;
       }
     });
 
@@ -2286,7 +2457,7 @@ function configurePage(origin: string): string {
     }
 
     if (setupToken) {
-      Promise.all([refreshStatus(), refreshSettings()])
+      Promise.all([refreshStatus(), refreshSettings(), refreshCompanionClients()])
         .then(() => unlockSetup())
         .catch((error) => lockSetup(error instanceof Error ? error.message : String(error)));
     }

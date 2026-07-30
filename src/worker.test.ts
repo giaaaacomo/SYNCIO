@@ -108,6 +108,18 @@ test("keeps the delegated flow primary and direct Trakt controls advanced", asyn
   assert.match(body, /<fieldset class="threshold-group">[\s\S]*name="likeThreshold"[\s\S]*name="loveThreshold"[\s\S]*<\/fieldset>/);
 });
 
+test("offers optional Companion pairing without claiming to read browser history", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
+  const body = await response.text();
+
+  assert.match(body, /Prepare streaming history/);
+  assert.match(body, /https:\/\/github\.com\/giaaaacomo\/SYNCIO-companion/);
+  assert.match(body, /native viewing activity/);
+  assert.match(body, /never reads browser history/);
+  assert.match(body, /\/api\/setup\/companion\/pairing/);
+  assert.match(body, /id="companion-worker-url">https:\/\/syncio\.example/);
+});
+
 test("reports redacted setup status for a self-host install", async () => {
   const db = new MemoryD1();
   const response = await worker.fetch(authorizedRequest("https://syncio.example/api/setup/status"), {
@@ -606,6 +618,9 @@ class MemoryD1 implements D1DatabaseLike {
         }
         if (query.includes("AS runs")) {
           return { runs: "[]" } as T;
+        }
+        if (query.includes("AS clients")) {
+          return { clients: "[]" } as T;
         }
         if (query.includes("AS rows")) {
           return { rows: "[]" } as T;

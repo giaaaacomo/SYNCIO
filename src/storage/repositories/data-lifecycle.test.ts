@@ -9,6 +9,9 @@ test("deletes all SYNCIO user data in foreign-key-safe order", async () => {
   await deleteSyncioUserData(db, "self-host");
 
   assert.deepEqual(db.queries, [
+    "DELETE FROM companion_pairing_sessions WHERE user_id = ?",
+    "DELETE FROM companion_clients WHERE user_id = ?",
+    "DELETE FROM companion_mappings WHERE user_id = ?",
     "DELETE FROM trakt_device_sessions WHERE user_id = ?",
     "DELETE FROM sync_run_locks WHERE user_id = ?",
     "DELETE FROM sync_cursors WHERE user_id = ?",
@@ -21,7 +24,7 @@ test("deletes all SYNCIO user data in foreign-key-safe order", async () => {
     "DELETE FROM sync_settings WHERE user_id = ?",
     "DELETE FROM users WHERE id = ?"
   ]);
-  assert.deepEqual(db.bindings, Array.from({ length: 11 }, () => ["self-host"]));
+  assert.deepEqual(db.bindings, Array.from({ length: 14 }, () => ["self-host"]));
 });
 
 class RecordingD1 implements D1DatabaseLike {

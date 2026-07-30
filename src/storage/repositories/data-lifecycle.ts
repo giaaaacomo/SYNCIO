@@ -1,4 +1,5 @@
 import type { D1DatabaseLike } from "../d1.js";
+import { listCompanionClients } from "./companion-clients.js";
 import { getConnection } from "./connections.js";
 import { getRecentSyncRuns } from "./sync-runs.js";
 import { getTraktDeviceSession } from "./trakt-device-sessions.js";
@@ -37,6 +38,8 @@ export interface SyncioDataExport {
   conflicts: ConflictExport[];
   ratingSnapshots: RatingSnapshotExport[];
   watchedReconciliation: WatchedReconciliationExport[];
+  companionClients: Awaited<ReturnType<typeof listCompanionClients>>;
+  companionMappingsCount: number;
   excludedSecrets: string[];
 }
 
@@ -97,7 +100,9 @@ export async function exportSyncioUserData(
     cursors,
     conflicts,
     ratingSnapshots,
-    watchedReconciliation
+    watchedReconciliation,
+    companionClients,
+    companionMappingsCount
   ] =
     await Promise.all([
       getUser(db, userId),
@@ -110,7 +115,9 @@ export async function exportSyncioUserData(
       readCursors(db, userId),
       readConflicts(db, userId),
       readRatingSnapshots(db, userId),
-      readWatchedReconciliation(db, userId)
+      readWatchedReconciliation(db, userId),
+      listCompanionClients(db, userId),
+      readCompanionMappingsCount(db, userId)
     ]);
 
   return {
@@ -145,14 +152,26 @@ export async function exportSyncioUserData(
     conflicts,
     ratingSnapshots,
     watchedReconciliation,
+    companionClients,
+    companionMappingsCount,
     excludedSecrets: [
       "Stremio auth key",
       "Trakt client secret",
       "Trakt access token",
       "Trakt refresh token",
+      "Companion pairing code",
+      "Companion bearer token",
+      "encrypted Companion mapping ciphertext",
       "encrypted credential ciphertext"
     ]
   };
+}
+
+async function readCompanionMappingsCount(db: D1DatabaseLike, userId: string): Promise<number> {
+  const row = await db.prepare(
+    "SELECT COUNT(*) AS count FROM companion_mappings WHERE user_id = ?"
+  ).bind(userId).first<{ count?: unknown }>();
+  return typeof row?.count === "number" && Number.isInteger(row.count) ? row.count : 0;
 }
 
 async function readRatingSnapshots(db: D1DatabaseLike, userId: string): Promise<RatingSnapshotExport[]> {
@@ -181,6 +200,9 @@ export async function disconnectSyncioAccounts(db: D1DatabaseLike, userId: strin
     ...settings,
     scope: "account-preview"
   });
+  await db.prepare("DELETE FROM companion_pairing_sessions WHERE user_id = ?").bind(userId).run();
+  await db.prepare("DELETE FROM companion_clients WHERE user_id = ?").bind(userId).run();
+  await db.prepare("DELETE FROM companion_mappings WHERE user_id = ?").bind(userId).run();
   await db.prepare("DELETE FROM trakt_device_sessions WHERE user_id = ?").bind(userId).run();
   await db.prepare("DELETE FROM watched_reconciliation_candidates WHERE user_id = ?").bind(userId).run();
   await db.prepare("DELETE FROM connections WHERE user_id = ?").bind(userId).run();
@@ -188,6 +210,9 @@ export async function disconnectSyncioAccounts(db: D1DatabaseLike, userId: strin
 
 export async function deleteSyncioUserData(db: D1DatabaseLike, userId: string): Promise<void> {
   const tables = [
+    "companion_pairing_sessions",
+    "companion_clients",
+    "companion_mappings",
     "trakt_device_sessions",
     "sync_run_locks",
     "sync_cursors",

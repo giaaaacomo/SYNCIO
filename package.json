@@ -49,7 +49,7 @@
     "sync:watched": "tsc --outDir dist && node dist/sync-watched.js",
     "worker:typecheck": "tsc -p tsconfig.worker.json --noEmit",
     "deploy:check": "node scripts/validate-deploy-config.mjs",
-    "worker:test": "tsc -p tsconfig.worker.test.json --outDir dist-worker && node --test dist-worker/*.test.js dist-worker/auth/*.test.js dist-worker/crypto/*.test.js dist-worker/storage/*.test.js dist-worker/storage/repositories/*.test.js dist-worker/stremio/*.test.js dist-worker/sync/*.test.js dist-worker/trakt/*.test.js",
+    "worker:test": "tsc -p tsconfig.worker.test.json --outDir dist-worker && node --test dist-worker/*.test.js dist-worker/auth/*.test.js dist-worker/companion/*.test.js dist-worker/crypto/*.test.js dist-worker/storage/*.test.js dist-worker/storage/repositories/*.test.js dist-worker/stremio/*.test.js dist-worker/sync/*.test.js dist-worker/trakt/*.test.js",
     "db:migrations:apply": "wrangler d1 migrations apply SYNCIO_DB --remote",
     "deploy": "wrangler d1 migrations apply SYNCIO_DB --remote && wrangler deploy",
     "deploy:staging": "wrangler deploy --config wrangler.staging.toml",
