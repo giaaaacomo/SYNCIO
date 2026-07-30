@@ -1540,7 +1540,7 @@ function configurePage(origin: string): string {
       <div class="step-heading">
         <div>
           <h2>Prepare streaming history <span class="muted">(optional)</span></h2>
-          <p>Recommended if you also watch on Netflix, Prime Video, Disney+ or Crunchyroll. The browser extension reads native viewing activity from those services; it never reads browser history.</p>
+          <p>Recommended if you also watch on Netflix, Prime Video or Crunchyroll. The browser extension reads native viewing activity from those services; it never reads browser history. Disney+ history import is not available yet.</p>
         </div>
         <span class="step-state" id="companion-state">Not connected</span>
       </div>
