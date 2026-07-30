@@ -2,6 +2,7 @@ import type { D1DatabaseLike } from "../storage/d1.js";
 import { fetchStremioIdentity } from "../stremio/account.js";
 import { fetchTraktIdentity } from "../trakt/device-oauth.js";
 import {
+  getCinemetaEpisodeTvdbIds,
   getStremioRatingStatus,
   getCinemetaVideoSets,
   getStremioLibrary,
@@ -46,6 +47,7 @@ export async function previewWorkerSync(input: {
   stremioApiBase?: string | undefined;
   stremioTraktClientId?: string | undefined;
   cinemetaVideoIdsBase?: string | undefined;
+  cinemetaMetaBase?: string | undefined;
   stremioLikesBase?: string | undefined;
 }): Promise<Record<string, unknown>> {
   const settings = await getHostedSyncSettings(input.db, input.userId);
@@ -154,6 +156,12 @@ export async function previewWorkerSync(input: {
       .map((item) => item._id)
   ]);
   const videoSets = await getCinemetaVideoSets(Array.from(showIds), input.fetcher, input.cinemetaVideoIdsBase);
+  const mismatchedEpisodeShows = mismatchedEpisodeHistoryShowIds(videoSets, watchedEpisodeHistory);
+  const episodeTvdbIds = await getCinemetaEpisodeTvdbIds(
+    mismatchedEpisodeShows,
+    input.fetcher,
+    input.cinemetaMetaBase
+  );
   const resolvedCinemetaIds = new Set(videoSets.map((item) => item.id));
   const missingCinemetaIds = Array.from(showIds).filter((id) => !resolvedCinemetaIds.has(id));
   const baseline = await buildBaselinePlan({
@@ -163,7 +171,8 @@ export async function previewWorkerSync(input: {
     watchedEpisodeHistory,
     watchlistMovies: watchlistMoviePages.items,
     watchlistShows: watchlistShowPages.items,
-    videoSets
+    videoSets,
+    episodeTvdbIds
   });
   const ratingMediaKeys = ratingCandidateKeys(library, ratedMoviePages.items, ratedShowPages.items);
   const ratingSnapshots = settings.ratingSyncEnabled
@@ -216,7 +225,9 @@ export async function previewWorkerSync(input: {
       traktWatchlistShowPages: watchlistShowPages.pagesFetched,
       cinemetaSeriesRequested: showIds.size,
       cinemetaSeriesResolved: videoSets.length,
-      cinemetaSeriesMissing: missingCinemetaIds.length
+      cinemetaSeriesMissing: missingCinemetaIds.length,
+      cinemetaEpisodeMappingShows: mismatchedEpisodeShows.length,
+      cinemetaEpisodeMappings: episodeTvdbIds.size
     },
     operations: {
       total: operations.length,
@@ -520,6 +531,7 @@ export async function buildBaselinePlan(input: {
   watchlistMovies: unknown;
   watchlistShows?: unknown;
   videoSets?: CinemetaVideoSet[];
+  episodeTvdbIds?: Map<string, number>;
 }): Promise<BaselineOperation[]> {
   const stremioWatched = new Map(
     input.library.filter((item) => item.type === "movie" && isStremioMovieWatched(item)).map((item) => [item._id, item])
@@ -591,7 +603,8 @@ export async function buildBaselinePlan(input: {
     input.library,
     input.watchedShows,
     input.watchedEpisodeHistory,
-    input.videoSets ?? []
+    input.videoSets ?? [],
+    input.episodeTvdbIds ?? new Map()
   ));
   return operations;
 }
@@ -600,9 +613,10 @@ async function episodeOperations(
   library: StremioLibraryItem[],
   watchedShows: unknown,
   watchedEpisodeHistory: unknown,
-  videoSets: CinemetaVideoSet[]
+  videoSets: CinemetaVideoSet[],
+  episodeTvdbIds: Map<string, number>
 ): Promise<BaselineOperation[]> {
-  const traktShows = watchedShowMap(watchedShows, watchedEpisodeHistory);
+  const traktShows = watchedShowMap(watchedShows, watchedEpisodeHistory, episodeTvdbIds);
   const libraryById = new Map(library.filter((item) => item.type === "series").map((item) => [item._id, item]));
   const operations: BaselineOperation[] = [];
 
@@ -644,9 +658,11 @@ async function episodeOperations(
 
 function watchedShowMap(
   value: unknown,
-  episodeHistory?: unknown
+  episodeHistory?: unknown,
+  episodeTvdbIds = new Map<string, number>()
 ): Map<string, { title: string | null; episodes: Set<string> }> {
   const output = new Map<string, { title: string | null; episodes: Set<string> }>();
+  const videoIdsByTvdb = new Map(Array.from(episodeTvdbIds, ([videoId, tvdbId]) => [tvdbId, videoId]));
   for (const itemValue of arrayValue(value)) {
     const item = recordValue(itemValue);
     const show = recordValue(item.show);
@@ -668,6 +684,7 @@ function watchedShowMap(
     const show = recordValue(event.show);
     const showIds = recordValue(show.ids);
     const episode = recordValue(event.episode);
+    const episodeIds = recordValue(episode.ids);
     if (typeof showIds.imdb !== "string" || typeof episode.season !== "number" || typeof episode.number !== "number") {
       continue;
     }
@@ -675,10 +692,40 @@ function watchedShowMap(
       title: stringOrNull(show.title),
       episodes: new Set<string>()
     };
-    existing.episodes.add(`${showIds.imdb}:${episode.season}:${episode.number}`);
+    const mappedVideoId = typeof episodeIds.tvdb === "number"
+      ? videoIdsByTvdb.get(episodeIds.tvdb) ?? null
+      : null;
+    existing.episodes.add(mappedVideoId ?? `${showIds.imdb}:${episode.season}:${episode.number}`);
     output.set(showIds.imdb, existing);
   }
   return output;
+}
+
+function mismatchedEpisodeHistoryShowIds(
+  videoSets: CinemetaVideoSet[],
+  episodeHistory: unknown
+): string[] {
+  const videosByShow = new Map(videoSets.map((item) => [item.id, new Set(item.videos)]));
+  const output = new Set<string>();
+  for (const eventValue of arrayValue(episodeHistory)) {
+    const event = recordValue(eventValue);
+    const show = recordValue(event.show);
+    const showIds = recordValue(show.ids);
+    const episode = recordValue(event.episode);
+    const episodeIds = recordValue(episode.ids);
+    if (
+      typeof showIds.imdb !== "string"
+      || typeof episode.season !== "number"
+      || typeof episode.number !== "number"
+      || typeof episodeIds.tvdb !== "number"
+    ) {
+      continue;
+    }
+    const knownVideos = videosByShow.get(showIds.imdb);
+    const rawVideoId = `${showIds.imdb}:${episode.season}:${episode.number}`;
+    if (knownVideos && !knownVideos.has(rawVideoId)) output.add(showIds.imdb);
+  }
+  return Array.from(output);
 }
 
 function inputShowImdbIds(value: unknown): string[] {

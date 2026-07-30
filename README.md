@@ -60,8 +60,8 @@ The default delegated Trakt mode reuses Stremio's existing authorization. It doe
 
 SYNCIO checks hourly. By default, a Stremio watch that is still missing from Trakt must persist for six hours before
 SYNCIO exports it, leaving the native Stremio integration as the immediate path while still repairing missed watches.
-Episode exports use TVDB episode identifiers so provider-specific season numbering does not create incorrect or
-repeated Trakt history writes.
+Episode reads and exports use TVDB episode identifiers so provider-specific season numbering does not create
+incorrect or repeated Trakt history writes.
 Large first imports are processed automatically as a sequence of guarded 250-operation batches from the configure
 page. Each batch uses a separate Worker invocation, and Trakt rate-limit waits resume automatically.
 

@@ -80,6 +80,25 @@ test("uses episode history when watched shows omit season details and deduplicat
   ]);
 });
 
+test("normalizes Trakt episode history to Stremio numbering through TVDB ids", async () => {
+  const videos = ["tt12343534:3:4"];
+  const watched = await encodeWatchedField([true], videos);
+  const plan = await buildBaselinePlan({
+    library: [{ _id: "tt12343534", name: "Jujutsu Kaisen", type: "series", state: { watched } }],
+    watchedMovies: [],
+    watchlistMovies: [],
+    watchedShows: [],
+    watchedEpisodeHistory: [{
+      show: { title: "Jujutsu Kaisen", ids: { imdb: "tt12343534" } },
+      episode: { season: 1, number: 51, ids: { tvdb: 11547510 } }
+    }],
+    videoSets: [{ id: "tt12343534", name: "Jujutsu Kaisen", videos }],
+    episodeTvdbIds: new Map([["tt12343534:3:4", 11547510]])
+  });
+
+  assert.deepEqual(plan, []);
+});
+
 test("maps Trakt ratings using the configured thresholds", () => {
   assert.equal(mapTraktRating(6), null);
   assert.equal(mapTraktRating(7), "liked");
