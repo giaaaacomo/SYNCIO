@@ -1,0 +1,89 @@
+name: Prepare SYNCIO update
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this installation
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download the current SYNCIO release channel
+        env:
+          UPSTREAM_ARCHIVE: https://github.com/giaaaacomo/SYNCIO/archive/refs/heads/main.tar.gz
+        run: |
+          curl --fail --location --silent --show-error "$UPSTREAM_ARCHIVE" --output "$RUNNER_TEMP/syncio.tar.gz"
+          mkdir "$RUNNER_TEMP/syncio-upstream"
+          tar --extract --gzip --file "$RUNNER_TEMP/syncio.tar.gz" --directory "$RUNNER_TEMP/syncio-upstream" --strip-components=1
+
+      - name: Prepare update branch
+        id: update
+        env:
+          UPSTREAM_DIR: ${{ runner.temp }}/syncio-upstream
+        run: |
+          current_version="$(node -p "require('./package.json').version")"
+          latest_version="$(node -p "require(process.env.UPSTREAM_DIR + '/package.json').version")"
+          echo "current=$current_version" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest_version" >> "$GITHUB_OUTPUT"
+
+          if [ "$current_version" = "$latest_version" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          branch="syncio/update-v$latest_version"
+          git checkout -B "$branch"
+          rsync --archive \
+            --exclude='.git/' \
+            --exclude='wrangler.jsonc' \
+            "$UPSTREAM_DIR/" ./
+
+          git add --all
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "syncio-update-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update SYNCIO to $latest_version"
+          git push --force-with-lease origin "$branch"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Open or reuse the update pull request
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_BRANCH: ${{ steps.update.outputs.branch }}
+          LATEST_VERSION: ${{ steps.update.outputs.latest }}
+        run: |
+          existing="$(gh pr list --head "$UPDATE_BRANCH" --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$existing" ]; then
+            echo "Update pull request: $existing" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if gh pr create \
+              --head "$UPDATE_BRANCH" \
+              --base "${{ github.event.repository.default_branch }}" \
+              --title "Update SYNCIO to $LATEST_VERSION" \
+              --body "Prepared by the built-in SYNCIO updater. Review the changed files and checks, then merge to let Cloudflare deploy the update. The installation-specific wrangler.jsonc file is preserved."; then
+            exit 0
+          fi
+
+          compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/${{ github.event.repository.default_branch }}...${UPDATE_BRANCH}?expand=1"
+          echo "GitHub did not allow this workflow to open a pull request automatically." >> "$GITHUB_STEP_SUMMARY"
+          echo "Open the pre-filled comparison to create it manually: $compare_url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report current version
+        if: steps.update.outputs.changed != 'true'
+        run: |
+          echo "No source update was prepared. Installed: ${{ steps.update.outputs.current }}; public channel: ${{ steps.update.outputs.latest }}." >> "$GITHUB_STEP_SUMMARY"

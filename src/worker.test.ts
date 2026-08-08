@@ -6,7 +6,7 @@ import type { D1DatabaseLike } from "./storage/d1.js";
 const TEST_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY";
 const SETUP_TOKEN = "test-setup-token";
 
-test("serves an installable manifest without catalog rows", async () => {
+test("serves an installable manifest with an update-only catalog", async () => {
   const response = await worker.fetch(new Request("https://syncio.example/manifest.json"), {});
   const body = await response.json() as {
     resources?: unknown[];
@@ -17,10 +17,62 @@ test("serves an installable manifest without catalog rows", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.deepEqual(body.resources, []);
-  assert.deepEqual(body.types, []);
-  assert.deepEqual(body.catalogs, []);
+  assert.deepEqual(body.resources, ["catalog", "meta"]);
+  assert.deepEqual(body.types, ["movie"]);
+  assert.deepEqual(body.catalogs, [{ type: "movie", id: "syncio-updates", name: "SYNCIO Updates" }]);
   assert.equal(body.behaviorHints?.configurationUrl, "https://syncio.example/configure");
+});
+
+test("keeps the Stremio update catalog empty until a newer version exists", async () => {
+  const current = await handleRequest(
+    new Request("https://syncio.example/catalog/movie/syncio-updates.json"),
+    {},
+    async () => Response.json({ version: "0.4.0-beta.1" })
+  );
+  const available = await handleRequest(
+    new Request("https://syncio.example/catalog/movie/syncio-updates.json"),
+    {},
+    async () => Response.json({ version: "0.4.0" })
+  );
+
+  assert.deepEqual(await current.json(), { metas: [] });
+  assert.deepEqual(await available.json(), {
+    metas: [{
+      id: "syncio:update",
+      type: "movie",
+      name: "SYNCIO 0.4.0 available",
+      poster: "https://syncio.example/assets/syncio-update.png",
+      posterShape: "poster",
+      description: "This installation is running 0.4.0-beta.1. Open Configure to review the update steps.",
+      website: "https://syncio.example/configure#updates",
+      links: [{
+        name: "Open SYNCIO Configure",
+        category: "syncio",
+        url: "https://syncio.example/configure#updates"
+      }]
+    }]
+  });
+});
+
+test("serves a public update status without setup authorization", async () => {
+  const response = await handleRequest(
+    new Request("https://syncio.example/api/update/status"),
+    { SYNCIO_SETUP_TOKEN: SETUP_TOKEN },
+    async () => Response.json({ version: "0.4.0" })
+  );
+  const body = await response.json() as { updateAvailable?: boolean; latestVersion?: string };
+
+  assert.equal(response.status, 200);
+  assert.equal(body.updateAvailable, true);
+  assert.equal(body.latestVersion, "0.4.0");
+});
+
+test("serves a cacheable PNG poster for Stremio update notices", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/assets/syncio-update.png"), {});
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/png");
+  assert.ok((await response.arrayBuffer()).byteLength > 1000);
 });
 
 test("serves a direct Stremio installation entrypoint", async () => {
@@ -118,6 +170,17 @@ test("offers optional Companion pairing without claiming to read browser history
   assert.match(body, /never reads browser history/);
   assert.match(body, /\/api\/setup\/companion\/pairing/);
   assert.match(body, /id="companion-worker-url">https:\/\/syncio\.example/);
+});
+
+test("offers a credential-free reviewed update flow in configure", async () => {
+  const response = await worker.fetch(new Request("https://syncio.example/configure"), {});
+  const body = await response.text();
+
+  assert.match(body, /id="update-check"/);
+  assert.match(body, /id="update-dialog"/);
+  assert.match(body, /syncio-update\.yml/);
+  assert.match(body, /cannot merge code without broad access/);
+  assert.doesNotMatch(body, /githubToken|GitHub Token/);
 });
 
 test("reports redacted setup status for a self-host install", async () => {

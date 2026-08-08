@@ -11,6 +11,7 @@ import {
 } from "./companion/service.js";
 import { decryptSecret, encryptSecret } from "./crypto/secrets.js";
 import { manifest, SYNCIO_VERSION } from "./manifest.js";
+import { updatePosterResponse } from "./status-poster.js";
 import { isD1Database, readStorageStatus } from "./storage/d1.js";
 import {
   listCompanionClients,
@@ -59,6 +60,7 @@ import {
   startTraktDeviceAuthorization
 } from "./trakt/device-oauth.js";
 import { TraktApiError } from "./trakt/api-error.js";
+import { readUpdateStatus, type UpdateStatus } from "./updates.js";
 
 interface Env {
   SYNCIO_DB?: unknown;
@@ -69,6 +71,7 @@ interface Env {
   STREMIO_TRAKT_CLIENT_ID?: string;
   STREMIO_LIKES_BASE?: string;
   CINEMETA_VIDEO_IDS_BASE?: string;
+  SYNCIO_UPDATE_SOURCE_URL?: string;
 }
 
 const SELF_HOST_USER_ID = "self-host";
@@ -378,6 +381,32 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
     return json(manifest(origin), 200, { "cache-control": "no-store" });
   }
 
+  if (url.pathname === "/assets/syncio-update.png") {
+    return updatePosterResponse();
+  }
+
+  if (url.pathname === "/api/update/status") {
+    return json(
+      await readUpdateStatus(SYNCIO_VERSION, externalFetch, env.SYNCIO_UPDATE_SOURCE_URL),
+      200,
+      { "cache-control": "public, max-age=900" }
+    );
+  }
+
+  if (url.pathname === "/catalog/movie/syncio-updates.json") {
+    const update = await readUpdateStatus(SYNCIO_VERSION, externalFetch, env.SYNCIO_UPDATE_SOURCE_URL);
+    return json({
+      metas: update.updateAvailable ? [updateMeta(origin, update)] : []
+    }, 200, { "cache-control": "public, max-age=3600" });
+  }
+
+  if (url.pathname === "/meta/movie/syncio:update.json") {
+    const update = await readUpdateStatus(SYNCIO_VERSION, externalFetch, env.SYNCIO_UPDATE_SOURCE_URL);
+    return json({ meta: updateMeta(origin, update) }, 200, {
+      "cache-control": "public, max-age=3600"
+    });
+  }
+
   if (url.pathname === "/healthz") {
     return json({ ok: true, service: "syncio-worker" });
   }
@@ -430,6 +459,26 @@ export async function handleRequest(request: Request, env: Env, externalFetch: t
   }
 
   return text("Not found", 404);
+}
+
+function updateMeta(origin: string, update: UpdateStatus) {
+  const available = update.updateAvailable && update.latestVersion;
+  return {
+    id: "syncio:update",
+    type: "movie",
+    name: available ? `SYNCIO ${update.latestVersion} available` : "SYNCIO settings",
+    poster: `${origin}/assets/syncio-update.png`,
+    posterShape: "poster",
+    description: available
+      ? `This installation is running ${update.currentVersion}. Open Configure to review the update steps.`
+      : `SYNCIO ${update.currentVersion} is up to date. Open Configure to manage synchronization.`,
+    website: `${origin}/configure#updates`,
+    links: [{
+      name: "Open SYNCIO Configure",
+      category: "syncio",
+      url: `${origin}/configure#updates`
+    }]
+  };
 }
 
 async function setupStatus(env: Env) {
@@ -1401,6 +1450,31 @@ function configurePage(origin: string): string {
     .inline-advanced summary { margin-bottom: 12px; font-size: 0.9rem; }
     .advanced-panel summary, .status-panel summary { padding: 4px 0; font-size: 0.95rem; }
     .status-actions { margin-top: 18px; }
+    .updates {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px 20px;
+      align-items: start;
+      padding: 28px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .updates h2 { margin: 0; }
+    .updates p { grid-column: 1 / -1; margin: 0; }
+    .updates .actions { grid-column: 1 / -1; margin-top: 4px; }
+    .update-state { color: var(--muted); font-size: 0.82rem; font-weight: 750; }
+    .update-state.available { color: var(--warning); }
+    dialog {
+      width: min(520px, calc(100vw - 32px));
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+    }
+    dialog::backdrop { background: rgb(0 0 0 / 0.68); }
+    dialog ol { display: grid; gap: 8px; padding-left: 22px; color: var(--muted); }
+    dialog .dialog-close { float: right; min-width: 42px; padding: 8px 12px; }
+    .button.disabled { pointer-events: none; opacity: 0.55; }
     .run-history { display: grid; gap: 0; margin: 14px 0 0; padding: 0; list-style: none; }
     .run-history li {
       display: grid;
@@ -1434,6 +1508,8 @@ function configurePage(origin: string): string {
       .step-meta { justify-items: start; margin-top: 6px; }
       .step-edit { width: auto; }
       .settings { grid-template-columns: 1fr; }
+      .updates { grid-template-columns: 1fr; }
+      .update-state { grid-column: 1; }
       dl { grid-template-columns: 1fr; gap: 2px; }
       dd { margin-bottom: 8px; }
       button, .button { width: 100%; }
@@ -1655,6 +1731,36 @@ function configurePage(origin: string): string {
       </div>
     </section>
 
+    <section class="updates protected hidden" id="updates" aria-labelledby="updates-title">
+      <h2 id="updates-title">Updates</h2>
+      <span class="update-state" id="update-state">Checking</span>
+      <p id="update-summary">Checking the public SYNCIO release channel.</p>
+      <div class="actions">
+        <button class="secondary" id="update-check" type="button">Check for updates</button>
+        <button class="hidden" id="update-review" type="button">Review update</button>
+      </div>
+    </section>
+
+    <dialog id="update-dialog" aria-labelledby="update-dialog-title">
+      <form method="dialog"><button class="secondary dialog-close" aria-label="Close">Close</button></form>
+      <h2 id="update-dialog-title">Update this installation</h2>
+      <p>SYNCIO cannot merge code without broad access to your GitHub account. Your repository includes a safe workflow that prepares a pull request for you.</p>
+      <label>
+        Installation repository
+        <input id="update-repository" placeholder="owner/repository" autocomplete="off">
+      </label>
+      <p class="muted">Saved only in this browser.</p>
+      <ol>
+        <li>Open the update workflow and select <strong>Run workflow</strong>.</li>
+        <li>Review the pull request and its checks.</li>
+        <li>Merge it. Cloudflare will deploy the new Worker automatically.</li>
+      </ol>
+      <div class="actions">
+        <a class="button disabled" id="update-workflow" target="_blank" rel="noreferrer" aria-disabled="true">Open update workflow</a>
+        <a href="https://github.com/giaaaacomo/SYNCIO/blob/main/docs/UPDATES.md" target="_blank" rel="noreferrer">Detailed guide</a>
+      </div>
+    </dialog>
+
     <details class="panel status-panel protected hidden">
       <summary>System status</summary>
       <dl>
@@ -1741,7 +1847,9 @@ function configurePage(origin: string): string {
   <script>
     const byId = (id) => document.getElementById(id);
     const tokenKey = "syncio.setupToken";
+    const updateRepositoryKey = "syncio.installRepository";
     let setupToken = sessionStorage.getItem(tokenKey) || "";
+    let updateStatus = null;
     let pollTimer;
     let previewFingerprint = "";
     let currentScope = "account-preview";
@@ -1953,6 +2061,63 @@ function configurePage(origin: string): string {
         : "";
     }
 
+    function normalizedRepository(value) {
+      const trimmed = String(value || "").trim()
+        .replace(/^https:\/\/github\.com\//, "")
+        .replace(/\.git$/, "")
+        .replace(/^\/+|\/+$/g, "");
+      return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed) ? trimmed : "";
+    }
+
+    function refreshUpdateWorkflowLink() {
+      const input = byId("update-repository");
+      const link = byId("update-workflow");
+      const repository = normalizedRepository(input.value);
+      link.classList.toggle("disabled", !repository);
+      link.setAttribute("aria-disabled", repository ? "false" : "true");
+      link.href = repository
+        ? "https://github.com/" + repository + "/actions/workflows/" +
+          (updateStatus?.workflowFile || "syncio-update.yml")
+        : "";
+      if (repository) localStorage.setItem(updateRepositoryKey, repository);
+    }
+
+    async function refreshUpdateStatus() {
+      const state = byId("update-state");
+      const summary = byId("update-summary");
+      const review = byId("update-review");
+      state.textContent = "Checking";
+      state.classList.remove("available");
+      try {
+        const response = await fetch("/api/update/status", { cache: "no-store" });
+        updateStatus = await response.json();
+        if (!response.ok) throw new Error(updateStatus.error || "Update check failed");
+        if (updateStatus.updateAvailable) {
+          state.textContent = "Update available";
+          state.classList.add("available");
+          summary.textContent = "Version " + updateStatus.latestVersion + " is available; this Worker runs " +
+            updateStatus.currentVersion + ".";
+          review.classList.remove("hidden");
+        } else if (updateStatus.state === "ahead") {
+          state.textContent = "Preview build";
+          summary.textContent = "This Worker is newer than the current public release channel.";
+          review.classList.add("hidden");
+        } else if (updateStatus.state === "current") {
+          state.textContent = "Up to date";
+          summary.textContent = "SYNCIO " + updateStatus.currentVersion + " is the current release.";
+          review.classList.add("hidden");
+        } else {
+          state.textContent = "Check unavailable";
+          summary.textContent = "The public release channel could not be reached. Your current installation keeps running normally.";
+          review.classList.add("hidden");
+        }
+      } catch (error) {
+        state.textContent = "Check unavailable";
+        summary.textContent = error instanceof Error ? error.message : "Update check failed";
+        review.classList.add("hidden");
+      }
+    }
+
     function renderAuthorization(authorization) {
       const active = authorization?.state === "awaiting-approval";
       byId("trakt-activate").classList.toggle("hidden", !active);
@@ -1970,13 +2135,21 @@ function configurePage(origin: string): string {
       setupToken = String(new FormData(form).get("setupToken") || "");
       sessionStorage.setItem(tokenKey, setupToken);
       try {
-        await Promise.all([refreshStatus(), refreshSettings(), refreshCompanionClients()]);
+        await Promise.all([refreshStatus(), refreshSettings(), refreshCompanionClients(), refreshUpdateStatus()]);
         unlockSetup();
         form.reset();
       } catch (error) {
         lockSetup(error instanceof Error ? error.message : String(error));
       }
     });
+
+    byId("update-check").addEventListener("click", refreshUpdateStatus);
+    byId("update-review").addEventListener("click", () => {
+      byId("update-repository").value = localStorage.getItem(updateRepositoryKey) || "";
+      refreshUpdateWorkflowLink();
+      byId("update-dialog").showModal();
+    });
+    byId("update-repository").addEventListener("input", refreshUpdateWorkflowLink);
 
     byId("connection-health").addEventListener("click", async () => {
       const button = byId("connection-health");
@@ -2457,7 +2630,7 @@ function configurePage(origin: string): string {
     }
 
     if (setupToken) {
-      Promise.all([refreshStatus(), refreshSettings(), refreshCompanionClients()])
+      Promise.all([refreshStatus(), refreshSettings(), refreshCompanionClients(), refreshUpdateStatus()])
         .then(() => unlockSetup())
         .catch((error) => lockSetup(error instanceof Error ? error.message : String(error)));
     }

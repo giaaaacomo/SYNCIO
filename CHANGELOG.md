@@ -2,6 +2,20 @@
 
 All notable changes to SYNCIO are documented here.
 
+## [0.4.0-beta.1] - 2026-08-08
+
+### Added
+
+- optional browser Companion pairing and privacy-bounded native platform-history preview contracts;
+- anonymous release-channel checks in the configure page;
+- a reviewable GitHub Actions update workflow that preserves installation-specific Worker configuration;
+- a normally empty Stremio update catalog that links back to Configure only when a new version exists.
+
+### Safety
+
+- update checks need no GitHub token and do not identify the installation repository;
+- SYNCIO never auto-merges updates or stores GitHub write credentials.
+
 ## [0.3.5] - 2026-07-28
 
 ### Fixed

@@ -1,4 +1,4 @@
-export const SYNCIO_VERSION = "0.3.8";
+export const SYNCIO_VERSION = "0.4.0-beta.1";
 
 export function manifest(origin: string) {
   return {
@@ -6,9 +6,13 @@ export function manifest(origin: string) {
     version: SYNCIO_VERSION,
     name: "SYNCIO",
     description: "Deep Stremio and Trakt synchronization.",
-    resources: [],
-    types: [],
-    catalogs: [],
+    resources: ["catalog", "meta"],
+    types: ["movie"],
+    catalogs: [{
+      type: "movie",
+      id: "syncio-updates",
+      name: "SYNCIO Updates"
+    }],
     behaviorHints: {
       configurable: true,
       configurationRequired: false,

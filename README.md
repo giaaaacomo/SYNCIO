@@ -67,7 +67,7 @@ page. Each batch uses a separate Worker invocation, and Trakt rate-limit waits r
 
 For a Stremio account created with Facebook, choose **Facebook** in the first configuration step. SYNCIO links to Stremio's official password setup procedure; adding a password does not disable Facebook login. SYNCIO never requests or processes Facebook credentials or tokens.
 
-Read the [full self-host onboarding guide](docs/SELF_HOST_ONBOARDING.md) for token recovery, updating, privacy export, disconnect, and deletion.
+Read the [full self-host onboarding guide](docs/SELF_HOST_ONBOARDING.md) for setup, token recovery, privacy export, disconnect, and deletion. The [update guide](docs/UPDATES.md) explains the built-in version check and reviewable pull-request flow.
 
 ## Privacy And Security
 
@@ -87,8 +87,8 @@ See [SECURITY.md](SECURITY.md) for private vulnerability reporting and the [beta
 - Removals and strict mirroring are disabled.
 - Sync runs hourly and process at most 250 differences per run.
 - Stremio Like/Love enumeration is limited, so SYNCIO scans known items in bounded batches.
-- Metadata/search availability belongs to other Stremio addons; SYNCIO exposes no catalog or metadata rows.
-- Self-hosted instances do not update automatically unless their Cloudflare Git integration deploys repository changes.
+- Metadata/search availability belongs to other Stremio addons; SYNCIO only exposes an update-notice row when a newer public version exists.
+- Self-hosted instances update only after their owner merges the generated update pull request; Cloudflare then deploys the repository change.
 
 ## Development
 
