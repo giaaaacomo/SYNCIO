@@ -34,7 +34,37 @@ jobs:
           echo "current=$current_version" >> "$GITHUB_OUTPUT"
           echo "latest=$latest_version" >> "$GITHUB_OUTPUT"
 
-          if [ "$current_version" = "$latest_version" ]; then
+          version_order="$(node -e '
+            const parse = (value) => {
+              const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(value);
+              if (!match) throw new Error(`Invalid version: ${value}`);
+              return { core: match.slice(1, 4).map(Number), pre: match[4]?.split(".") || [] };
+            };
+            const compare = (left, right) => {
+              for (let index = 0; index < 3; index += 1) {
+                if (left.core[index] !== right.core[index]) return Math.sign(left.core[index] - right.core[index]);
+              }
+              if (!left.pre.length && right.pre.length) return 1;
+              if (left.pre.length && !right.pre.length) return -1;
+              const length = Math.max(left.pre.length, right.pre.length);
+              for (let index = 0; index < length; index += 1) {
+                if (left.pre[index] === undefined) return -1;
+                if (right.pre[index] === undefined) return 1;
+                if (left.pre[index] === right.pre[index]) continue;
+                const a = /^\d+$/.test(left.pre[index]) ? Number(left.pre[index]) : null;
+                const b = /^\d+$/.test(right.pre[index]) ? Number(right.pre[index]) : null;
+                if (a !== null && b !== null) return Math.sign(a - b);
+                if (a !== null) return -1;
+                if (b !== null) return 1;
+                return left.pre[index] < right.pre[index] ? -1 : 1;
+              }
+              return 0;
+            };
+            const result = compare(parse(process.argv[1]), parse(process.argv[2]));
+            process.stdout.write(result < 0 ? "behind" : result > 0 ? "ahead" : "current");
+          ' "$current_version" "$latest_version")"
+
+          if [ "$version_order" != "behind" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

@@ -11,6 +11,7 @@ SYNCIO does not keep a central administrator token for user installations. An up
 5. Cloudflare's Git integration builds and deploys the production branch automatically.
 
 The workflow copies the current public SYNCIO source into an update branch and preserves the installation-specific `wrangler.jsonc` file. It never reads Worker secrets or D1 data.
+It also refuses to replace a preview or newer installation with an older public version.
 
 ## Why updates are not merged automatically
 
